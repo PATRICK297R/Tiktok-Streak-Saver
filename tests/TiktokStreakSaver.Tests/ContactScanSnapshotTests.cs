@@ -107,7 +107,7 @@ public class ContactScanSnapshotTests
     [Fact]
     public void AScanThatSaysItIsRunningButHasGoneQuietIsAbandoned()
     {
-        var now = new DateTime(2026, 9, 18, 10, 0, 0, DateTimeKind.Utc);
+        var now = new DateTime(2026, 9, 18, 10, 0, 0, DateTimeKind.Local);
         var snapshot = Running(attempts: 5);
         snapshot.UpdatedAt = now.AddMinutes(-5);
 
@@ -117,7 +117,7 @@ public class ContactScanSnapshotTests
     [Fact]
     public void AScanThatIsStillWritingIsNotAbandoned()
     {
-        var now = new DateTime(2026, 9, 18, 10, 0, 0, DateTimeKind.Utc);
+        var now = new DateTime(2026, 9, 18, 10, 0, 0, DateTimeKind.Local);
         var snapshot = Running(attempts: 5);
         snapshot.UpdatedAt = now.AddSeconds(-10);
 
@@ -127,7 +127,7 @@ public class ContactScanSnapshotTests
     [Fact]
     public void AStoppedScanIsNeverAbandonedHoweverOldItIs()
     {
-        var now = new DateTime(2026, 9, 18, 10, 0, 0, DateTimeKind.Utc);
+        var now = new DateTime(2026, 9, 18, 10, 0, 0, DateTimeKind.Local);
         var snapshot = new ContactScanSnapshot { Phase = ContactScanPhase.Finished, UpdatedAt = now.AddDays(-3) };
 
         Assert.False(ContactScanSnapshot.IsAbandoned(snapshot, now, TimeSpan.FromMinutes(4)));
@@ -135,7 +135,7 @@ public class ContactScanSnapshotTests
 
     [Fact]
     public void NoSnapshotIsNotAbandoned()
-        => Assert.False(ContactScanSnapshot.IsAbandoned(null, DateTime.UtcNow, TimeSpan.FromMinutes(4)));
+        => Assert.False(ContactScanSnapshot.IsAbandoned(null, DateTime.Now, TimeSpan.FromMinutes(4)));
 
     /// <summary>
     /// The empty-scan explanation is written once, against the scanner's own report type. Handing the

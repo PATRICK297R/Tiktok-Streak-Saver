@@ -18,6 +18,12 @@
     <Color x:Key="PrimaryLight">#FFF0F3</Color>
     <Color x:Key="PrimarySubtle">#FFE4EA</Color>
 
+    <!--
+        The same tinted surface for dark mode. A light pink card would glare against a dark page, and the
+        alpha version keeps the "this one is worth looking at" hint without inventing a second accent.
+    -->
+    <Color x:Key="PrimarySubtleDark">#3AFE2C55</Color>
+
     <Color x:Key="White">White</Color>
     <Color x:Key="Black">Black</Color>
     <Color x:Key="Magenta">#FE2C55</Color>

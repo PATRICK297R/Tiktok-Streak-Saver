@@ -75,10 +75,10 @@ public sealed class ContactScanStore
 
             // A stopped snapshot is the last word on the scan, so it is written even if the interval has
             // not elapsed - otherwise the file could be left describing a scan as still running.
-            if (!snapshot.IsRunning || DateTime.UtcNow - _lastWriteAt >= _fileWriteInterval)
+            if (!snapshot.IsRunning || DateTime.Now - _lastWriteAt >= _fileWriteInterval)
             {
                 TryWrite(snapshot);
-                _lastWriteAt = DateTime.UtcNow;
+                _lastWriteAt = DateTime.Now;
             }
         }
     }

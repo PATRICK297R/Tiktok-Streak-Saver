@@ -44,6 +44,7 @@
 		     the tests cover the same serialisation path that ships. -->
 		<Compile Include="../../src/TiktokStreakSaver/Models/AppBackup.cs" Link="Shared/Models/AppBackup.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/AppJsonSerialization.cs" Link="Shared/Services/AppJsonSerialization.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/AppTimestamps.cs" Link="Shared/Services/AppTimestamps.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/AppJsonContext.cs" Link="Shared/Services/AppJsonContext.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/AppBackupCodec.cs" Link="Shared/Services/AppBackupCodec.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/BackupMergePolicy.cs" Link="Shared/Services/BackupMergePolicy.cs" />

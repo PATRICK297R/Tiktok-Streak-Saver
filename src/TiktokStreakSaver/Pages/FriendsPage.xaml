@@ -272,19 +272,51 @@
                                 </VerticalStackLayout>
 
                                 <!--
-                                    Adding contacts faster than one at a time. Sits right under the
-                                    add panel because that is where the need for it shows up.
+                                    Reading the friend list straight out of the TikTok inbox.
+
+                                    Given its own card with a title, a line explaining what it saves the
+                                    user, and a filled button, rather than being one more text link in the
+                                    row above. That row already holds Import, Export, Add and Clear, which
+                                    all look identical at a glance, and a first-time user has no way to know
+                                    that one of them spares them typing every username by hand. A link that
+                                    has to be discovered is not a feature.
                                 -->
-                                <Button Text="Import from your TikTok chats"
-                                        Style="{StaticResource TextButton}"
-                                        HorizontalOptions="Start"
-                                        Clicked="OnImportFromChatsClicked"/>
+                                <Border StrokeThickness="0"
+                                        StrokeShape="RoundRectangle 16"
+                                        Padding="16,14"
+                                        BackgroundColor="{AppThemeBinding Light={StaticResource PrimarySubtle}, Dark={StaticResource PrimarySubtleDark}}">
+                                    <Grid ColumnDefinitions="*, Auto" ColumnSpacing="12">
+                                        <VerticalStackLayout Grid.Column="0" Spacing="3" VerticalOptions="Center">
+                                            <Label Text="Import friends from TikTok chats"
+                                                   Style="{StaticResource SectionLabel}"/>
+                                            <Label Text="Adds everyone you already chat with, in one go — no usernames to type."
+                                                   Style="{StaticResource DataLabel}"
+                                                   LineBreakMode="WordWrap"/>
+                                        </VerticalStackLayout>
+
+                                        <Button Grid.Column="1"
+                                                Text="Import chats"
+                                                BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
+                                                TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
+                                                FontFamily="InterSemiBold"
+                                                CornerRadius="14"
+                                                HeightRequest="40"
+                                                Padding="14,0"
+                                                VerticalOptions="Center"
+                                                Clicked="OnImportFromChatsClicked"/>
+                                    </Grid>
+                                </Border>
 
                                 <VerticalStackLayout x:Name="FriendsListContainer" Spacing="8">
+                                    <!--
+                                        The moment a new user is most stuck. Pointing at both routes, and at the
+                                        import card by name, so the fastest one is not the one they never find.
+                                    -->
                                     <Label x:Name="NoFriendsLabel"
-                                           Text="No friends added. Tap 'Add' to begin."
+                                           Text="No friends yet. Add one, or import everyone from your TikTok chats above."
                                            Style="{StaticResource DataLabel}"
                                            HorizontalOptions="Center"
+                                           LineBreakMode="WordWrap"
                                            IsVisible="True"/>
                                 </VerticalStackLayout>
                             </VerticalStackLayout>
@@ -380,10 +412,16 @@
                                 </VerticalStackLayout>
 
                                 <VerticalStackLayout x:Name="GroupsListContainer" Spacing="8">
+                                    <!--
+                                        Importing reads the inbox, and a group chat is in the inbox, so the
+                                        groups a user is in arrive the same way - which is worth saying here,
+                                        where someone looking for them would otherwise only see "Add".
+                                    -->
                                     <Label x:Name="NoGroupsLabel"
-                                           Text="No groups added. Tap 'Add' to begin."
+                                           Text="No groups yet. Add one, or import your chats from the Friends tab."
                                            Style="{StaticResource DataLabel}"
                                            HorizontalOptions="Center"
+                                           LineBreakMode="WordWrap"
                                            IsVisible="True"/>
                                 </VerticalStackLayout>
                             </VerticalStackLayout>

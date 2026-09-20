@@ -70,6 +70,9 @@ public sealed class ContactScanSnapshot
     /// <summary>
     /// When this was last written. Used to tell a scan that is still working from one whose process was
     /// killed: a snapshot that says it is running but has not been touched for minutes is not running.
+    /// <para>
+    /// Local time, like the rest of the app's timestamps; the file holds it as an instant.
+    /// </para>
     /// </summary>
     [JsonPropertyName("updatedAt")] public DateTime UpdatedAt { get; set; }
 
@@ -87,9 +90,13 @@ public sealed class ContactScanSnapshot
     /// while it works, and always when it stops. Without this the page would wait forever on a scan that
     /// no longer exists, because the only record of it says "running".
     /// </para>
+    /// <para>
+    /// Local time, like every other timestamp the app records. It is stored as an instant and read back as
+    /// local, so this has to compare like with like - see <see cref="AppTimestamps"/>.
+    /// </para>
     /// </summary>
-    public static bool IsAbandoned(ContactScanSnapshot? snapshot, DateTime nowUtc, TimeSpan timeout)
-        => snapshot is not null && snapshot.IsRunning && nowUtc - snapshot.UpdatedAt > timeout;
+    public static bool IsAbandoned(ContactScanSnapshot? snapshot, DateTime now, TimeSpan timeout)
+        => snapshot is not null && snapshot.IsRunning && now - snapshot.UpdatedAt > timeout;
 
     /// <summary>
     /// What the page and the notification say while the scan works. Worded the same as the version that

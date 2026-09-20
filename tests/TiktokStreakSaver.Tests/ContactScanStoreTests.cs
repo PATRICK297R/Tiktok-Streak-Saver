@@ -29,7 +29,7 @@ public class ContactScanStoreTests : IDisposable
         Phase = phase,
         Message = message,
         Attempts = items + 1,
-        UpdatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.Now,
         Items = Enumerable.Range(1, items)
             .Select(i => new ContactScanItemDto { Username = $"user{i}", DisplayName = $"Chat {i}" })
             .ToList()

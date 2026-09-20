@@ -809,7 +809,7 @@ public class ContactScanService : Service
             Url = _url,
             UserAgent = _userAgent,
             StartedAt = _startedAt,
-            UpdatedAt = DateTime.UtcNow
+            UpdatedAt = DateTime.Now
         };
 
         Store.Publish(snapshot);

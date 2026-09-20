@@ -102,7 +102,7 @@ public partial class ImportContactsPage : ContentPage
 #if ANDROID
         var snapshot = ContactScanHub.Store.Read();
 
-        if (ContactScanSnapshot.IsAbandoned(snapshot, DateTime.UtcNow, AbandonedAfter))
+        if (ContactScanSnapshot.IsAbandoned(snapshot, DateTime.Now, AbandonedAfter))
         {
             // The app was closed while the scan was running and the process did not survive it. Saying so
             // beats waiting on a scan that is no longer there.
@@ -235,7 +235,7 @@ public partial class ImportContactsPage : ContentPage
 
         // The service can be killed without ever getting the chance to publish a stopping state. Without
         // this the page would sit on a spinner that can never move again.
-        if (ContactScanSnapshot.IsAbandoned(snapshot, DateTime.UtcNow, AbandonedAfter))
+        if (ContactScanSnapshot.IsAbandoned(snapshot, DateTime.Now, AbandonedAfter))
         {
             LogDiagnostic("import was abandoned while the page was watching it");
             ContactScanHub.Store.Clear();

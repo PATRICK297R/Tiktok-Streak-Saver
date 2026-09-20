@@ -35,11 +35,13 @@ public sealed class FlexibleNullableDateTimeConverter : JsonConverter<DateTime?>
         if (reader.TokenType == JsonTokenType.String)
         {
             var s = reader.GetString();
-            return string.IsNullOrEmpty(s) ? null : DateTime.Parse(s, null, System.Globalization.DateTimeStyles.RoundtripKind);
+            return string.IsNullOrEmpty(s)
+                ? null
+                : AppTimestamps.FromStored(DateTime.Parse(s, null, System.Globalization.DateTimeStyles.RoundtripKind));
         }
 
         if (reader.TokenType == JsonTokenType.Number && reader.TryGetDouble(out var num))
-            return AppleReferenceUtc.AddSeconds(num);
+            return AppTimestamps.FromStored(AppleReferenceUtc.AddSeconds(num));
 
         throw new JsonException($"Unexpected token for DateTime?: {reader.TokenType}");
     }
@@ -49,7 +51,7 @@ public sealed class FlexibleNullableDateTimeConverter : JsonConverter<DateTime?>
         if (value is null)
             writer.WriteNullValue();
         else
-            writer.WriteStringValue(value.Value.ToUniversalTime().ToString("O"));
+            writer.WriteStringValue(AppTimestamps.ToStored(value.Value).ToString("O"));
     }
 }
 
