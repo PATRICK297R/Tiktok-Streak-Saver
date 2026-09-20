@@ -8,50 +8,36 @@ namespace TiktokStreakSaver.Pages;
 /// Reads the conversations in the user's TikTok inbox and offers to add the ones that are not
 /// already in the list.
 /// <para>
-/// The scanning itself is done by <c>tiktok_read_contacts.js</c>, which reports into
-/// <c>window.__saverScan</c>; this page polls that object. Polling one JSON value avoids marshalling
-/// strings across the JavaScript bridge, and it keeps the page's only job - deciding what to add -
-/// in C# where it shares its matching rules with the backup restore.
+/// The reading itself is done by <c>tiktok_read_contacts.js</c>, which reports into
+/// <c>window.__saverScan</c> and pushes every step through the <c>SaverScan</c> bridge. On Android the
+/// script is driven by <c>ContactScanService</c> rather than by this page, so a long friend list can be
+/// read with the app closed; this page starts it, watches its progress and then reviews the result.
+/// </para>
+/// <para>
+/// Deciding what to add stays in C#, where it shares its matching rules with the backup restore - which
+/// is why the scanner reports what it saw and this page decides what it means.
 /// </para>
 /// </summary>
 [Microsoft.Maui.Controls.Internals.Preserve(AllMembers = true)]
 public partial class ImportContactsPage : ContentPage
 {
-    private const string ScanScriptName = "tiktok_read_contacts.js";
-
     private readonly SettingsService _settingsService;
     private readonly SessionService _sessionService;
 
-    private string _scanScript = string.Empty;
-    private IDispatcherTimer? _watchdogTimer;
-    private bool _scanFinished;
-    private bool _scriptReady;
-    private bool _pageLoaded;
-    private bool _isInjecting;
+    /// <summary>
+    /// Watches the scan. The page does not do the scanning any more: on Android that is done by
+    /// <c>ContactScanService</c>, which is what lets the app be closed while a long friend list is read.
+    /// This page starts it, follows its progress and then reviews the result.
+    /// </summary>
+    private IDispatcherTimer? _pollTimer;
+
     private bool _isAdding;
-    private bool _reportReceived;
-    private DateTime _lastReportAt;
-    private int _stallCount;
 
-    /// <summary>The scanner's most recent log line, so only new ones are copied into the app log.</summary>
-    private string _lastScriptLog = string.Empty;
+    /// <summary>Set once the results are on screen, so the polling stops and nothing is drawn twice.</summary>
+    private bool _resultsShown;
 
-    /// <summary>
-    /// Every chat reported so far, kept here rather than in the page.
-    /// <para>
-    /// The page's JavaScript context does not survive a navigation, and opening a chat can navigate.
-    /// A scan that kept its findings in the page would lose them and start over, which looks exactly
-    /// like a scan that is stuck. Accumulating in the app means a restarted scanner adds to what is
-    /// already known instead of replacing it.
-    /// </para>
-    /// </summary>
-    private readonly List<FriendConfig> _accumulated = new();
-
-    /// <summary>
-    /// The last status the scanner reported. Held so the watchdog can put it back after it has shown
-    /// its own "waiting" text, instead of leaving a message that no longer describes anything.
-    /// </summary>
-    private string _lastStatus = string.Empty;
+    /// <summary>So the "you can close the app" notice is given once per visit rather than on every press.</summary>
+    private bool _toldAboutBackground;
 
     /// <summary>
     /// The scanned chats as the review list holds them: which to add, and what has been corrected.
@@ -69,19 +55,19 @@ public partial class ImportContactsPage : ContentPage
     /// </summary>
     private readonly List<Action> _rowRefreshers = new();
 
-#if ANDROID
-    /// <summary>The platform WebView the JavaScript interface is currently attached to.</summary>
-    private Android.Webkit.WebView? _interfaceHost;
-#endif
+    /// <summary>How often the page looks for the service's progress. Far shorter than reading one chat takes.</summary>
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
 
     /// <summary>
-    /// When the page started trying to read the inbox, and when the script was last sent. Both are
-    /// needed: injections are repeated while nothing comes back, so a single "injected at" time
-    /// cannot also serve as the overall deadline.
+    /// A stored scan that says it is running but has not been written for this long is treated as dead.
+    /// <para>
+    /// Only reachable after the process was killed mid-scan: the service writes at least every couple of
+    /// seconds while it works, and always when it stops. Without this, reopening the app after it was
+    /// closed mid-scan would wait forever on a scan that no longer exists, because the only record of it
+    /// still says "running".
+    /// </para>
     /// </summary>
-    private DateTime _startedAt;
-    private DateTime _lastInjectionAt;
-    private int _injectionAttempts;
+    private static readonly TimeSpan AbandonedAfter = TimeSpan.FromMinutes(4);
 
     public ImportContactsPage()
     {
@@ -94,8 +80,8 @@ public partial class ImportContactsPage : ContentPage
     {
         base.OnAppearing();
 
-        // The inbox needs a session; without one TikTok shows a login wall and the scan would
-        // report "nothing found", which reads like a bug rather than a missing login.
+        // The inbox needs a session; without one TikTok shows a login wall and the scan would report
+        // "nothing found", which reads like a bug rather than a missing login.
         if (!_sessionService.IsSessionValid())
         {
             await DisplayAlert("Login required",
@@ -105,300 +91,213 @@ public partial class ImportContactsPage : ContentPage
             return;
         }
 
-        try
-        {
-            using var stream = await FileSystem.OpenAppPackageFileAsync(ScanScriptName);
-            using var reader = new System.IO.StreamReader(stream);
-
-            // Flattened before injection, exactly as the sending flow prepares its script: the
-            // Android WebView does not reliably evaluate a multi-line script, and the failure is
-            // silent - the page then waits for a scanner that never ran.
-            _scanScript = ScriptPreparation.ForInjection(await reader.ReadToEndAsync());
-        }
-        catch (Exception ex)
-        {
-            ScanStatusLabel.Text = "The scanner could not be loaded.";
-            await DisplayAlert("Import unavailable", $"Could not load the scanner: {ex.Message}", "OK");
-            return;
-        }
-
-        _scriptReady = true;
-
-        LogDiagnostic($"import started; page loaded={_pageLoaded}, ua={ResolveUserAgent()}");
-
-        // The page drives itself from here: the watchdog loads the inbox if the platform view was
-        // not ready yet, keeps sending the script until it reports, and gives up with an explanation.
-        // Making it a driver rather than a deadline matters, because a single injection attempt that
-        // lands at the wrong moment leaves the page waiting with nothing to show for it.
-        StartWatchdog();
-
-        // The platform WebView may not exist yet while the page is appearing, and configuring one
-        // that does not exist does nothing at all - which is how the first load went out with the
-        // framework's default user agent and came up as TikTok's mobile page. HandlerChanged is the
-        // point where the platform view is guaranteed to be there.
-        ScanWebView.HandlerChanged -= OnScanWebViewHandlerChanged;
-        ScanWebView.HandlerChanged += OnScanWebViewHandlerChanged;
-        LoadInboxIfPossible();
-    }
-
-    private void OnScanWebViewHandlerChanged(object? sender, EventArgs e) => LoadInboxIfPossible();
-
-    /// <summary>
-    /// Configures the WebView and then loads the inbox, in that order and only once.
-    /// <para>
-    /// The order is the whole point: the user agent has to be in place before the first request,
-    /// because the session cookies were issued against it. Loading first and configuring afterwards
-    /// presents TikTok with a different client, which answers with the mobile layout or a sign-in
-    /// page instead of the inbox.
-    /// </para>
-    /// </summary>
-    private void LoadInboxIfPossible()
-    {
-        if (_pageLoaded || !_scriptReady)
-            return;
-
 #if ANDROID
-        // Configured directly on the platform view rather than through
-        // TikTokWebViewHelper.ConfigureWebView, which defers the work to the main thread. That
-        // deferral is harmless when nothing follows it, but here the load starts immediately
-        // afterwards - so the user agent could be applied after the first request had already gone
-        // out. That is how the inbox came up as TikTok's mobile page on a first visit.
-        var platformView = ScanWebView.Handler?.PlatformView as Android.Webkit.WebView;
-        if (platformView is null)
-            return;
+        var snapshot = ContactScanHub.Store.Read();
 
-        // The scanner needs the wide viewport, not just the desktop user agent: TikTok picks its
-        // layout from the viewport width, so a phone-width WebView is served the mobile layout whose
-        // conversation rows the selectors do not match. This is why the inbox was on screen and the
-        // scan still found nothing.
-        TikTokWebViewHelper.ConfigureAndroidScannerWebView(platformView, ResolveUserAgent());
-        EnsureJsInterface(platformView);
+        if (ContactScanSnapshot.IsAbandoned(snapshot, DateTime.UtcNow, AbandonedAfter))
+        {
+            // The app was closed while the scan was running and the process did not survive it. Saying so
+            // beats waiting on a scan that is no longer there.
+            LogDiagnostic("previous import was abandoned — the app was closed while it was running");
+            ContactScanHub.Store.Clear();
+            snapshot = null;
+        }
+
+        // Results from a scan that already finished - including one that finished while the app was
+        // closed, which is the normal case for a long list.
+        if (snapshot is { IsStopped: true })
+        {
+            ShowSnapshotResults(snapshot);
+            return;
+        }
+
+        if (snapshot is null)
+            StartServiceScan();
+
+        StartPolling();
 #else
-        if (ScanWebView.Handler is null)
-            return;
-
-        TikTokWebViewHelper.ConfigureWebView(ScanWebView, ResolveUserAgent());
+        // The scanner reports through a JavaScript interface, which only exists on Android. There is no
+        // equivalent on iOS, and Apple has nothing like a foreground service to keep a WebView reading
+        // while the app is closed - which is the point of the feature. Saying so plainly is better than a
+        // progress screen that can never move.
+        await DisplayAlert("Not available on iPhone",
+            "Importing your chats needs Android, so it is not available on iPhone yet.",
+            "OK");
+        await Navigation.PopAsync();
 #endif
-
-        _pageLoaded = true;
-        ScanWebView.Source = new UrlWebViewSource { Url = TikTokWebViewHelper.MessagesUrl };
-    }
-
-#if ANDROID
-    /// <summary>
-    /// Attaches the bridge the scanner reports through.
-    /// <para>
-    /// This is the mechanism the sending flow already uses to hear back from its script, and the one
-    /// that is proven on this platform. It belongs to the platform WebView, so it survives
-    /// navigations and only needs re-attaching when the platform view itself is replaced.
-    /// </para>
-    /// </summary>
-    private void EnsureJsInterface(Android.Webkit.WebView platformView)
-    {
-        if (ReferenceEquals(_interfaceHost, platformView))
-            return;
-
-        platformView.AddJavascriptInterface(new ScanJsInterface(this), ContactScanReader.BridgeName);
-        _interfaceHost = platformView;
-    }
-#endif
-
-    /// <summary>
-    /// The user agent the session was created with, falling back to the very same constant the login
-    /// page uses. A different string would present a different client and the session would be
-    /// rejected.
-    /// </summary>
-    private string ResolveUserAgent()
-    {
-        var loginUserAgent = _sessionService.GetLoginUserAgent();
-        return string.IsNullOrWhiteSpace(loginUserAgent) ? AppConstants.DesktopChromeUserAgent : loginUserAgent;
     }
 
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
-        StopWatchdog();
-        ScanWebView.HandlerChanged -= OnScanWebViewHandlerChanged;
 
-        // The same teardown the login WebView uses: it stops loading and releases the page without
-        // disconnecting a handler MAUI still owns.
-        TikTokWebViewHelper.TearDownLoginWebView(ScanWebView);
+        // Only the watching stops. On Android the scan runs in a service and carries on without this page,
+        // which is the whole reason it was moved there.
+        StopPolling();
     }
 
-    private void OnScanNavigating(object? sender, WebNavigatingEventArgs e)
-    {
-        var url = e.Url;
-        if (string.IsNullOrEmpty(url))
-            return;
-
-        if (WebViewNavigationPolicy.IsLoadable(url))
-            return;
-
-        // TikTok tries to open its own app with custom schemes, which a WebView cannot load - Android
-        // shows a blank error page instead and the scan is stranded. Cancel and follow the real
-        // destination when the URL carries one.
-        e.Cancel = true;
-
-        var target = WebViewNavigationPolicy.ExtractHttpDestination(url);
-        if (target != null)
-            ScanWebView.Source = target;
-    }
-
-    private async void OnScanNavigated(object? sender, WebNavigatedEventArgs e)
-    {
-        if (_scanFinished)
-            return;
-
-        // A session can be rejected even when the app still believes it is signed in. Without this
-        // the page would sit waiting for a chat list that is never coming.
-        if (WebViewNavigationPolicy.IsLoginWall(e.Url))
-        {
-            StopWatchdog();
-            ScanStatusLabel.Text = "TikTok asked you to sign in again.";
-            await DisplayAlert("Sign in again",
-                "TikTok no longer accepts the saved session. Sign in again from the Profile page, then come back to import.",
-                "OK");
-            await Navigation.PopAsync();
-            return;
-        }
-
-        // Injected on every navigation until results arrive. The script guards against restarting
-        // itself, and re-injecting matters because a full page navigation somewhere in TikTok's flow
-        // wipes the page's JavaScript context - taking a scan that was already running with it.
-        InjectScanner();
-    }
+    // ─── Driving the background scan ─────────────────────────────────────────
 
     /// <summary>
-    /// Sends the scanner into the page.
+    /// Asks the background service to read the inbox.
     /// <para>
-    /// This uses the platform WebView's own call, which is what the sending flow uses. MAUI's
-    /// <c>EvaluateJavaScriptAsync</c> wrapper is deliberately not used: the importer was the only
-    /// place in the app relying on it, and it produced a page where the script had plainly never run
-    /// while the call itself reported no error.
+    /// The stored snapshot is cleared first, because it is what this page reads: the previous scan's
+    /// results would otherwise be shown as if they were this one's.
     /// </para>
     /// </summary>
-    private void InjectScanner()
+    private async void StartServiceScan()
     {
-        if (_scanFinished || _isInjecting || string.IsNullOrEmpty(_scanScript))
-            return;
-
-        _isInjecting = true;
+#if ANDROID
         try
         {
-#if ANDROID
-            var platformView = ScanWebView.Handler?.PlatformView as Android.Webkit.WebView;
-            if (platformView is null)
-                return;
+            ContactScanHub.Store.Clear();
 
-            EnsureJsInterface(platformView);
-            platformView.EvaluateJavascript(_scanScript, null);
-#else
-            _ = ScanWebView.EvaluateJavaScriptAsync(_scanScript);
-#endif
+            var context = Platform.CurrentActivity ?? Android.App.Application.Context;
+            var intent = new Android.Content.Intent(context, typeof(Platforms.Android.Services.ContactScanService));
 
-            // Recorded so the watchdog knows when to retry, and so the page can report how many
-            // attempts were made when the script never comes back.
-            _lastInjectionAt = DateTime.Now;
-            _injectionAttempts++;
-            LogDiagnostic($"script sent (attempt {_injectionAttempts})");
+            if (Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.O)
+                context.StartForegroundService(intent);
+            else
+                context.StartService(intent);
+
+            LogDiagnostic("import started from the import page");
         }
         catch (Exception ex)
         {
-            // Worth surfacing rather than only logging: a script that cannot be injected looks
-            // exactly like an inbox with no conversations in it.
-            System.Diagnostics.Debug.WriteLine($"Contact scan injection failed: {ex}");
-            ScanStatusLabel.Text = "The scanner could not start on this page.";
+            // Worth surfacing rather than only logging: an import that cannot start looks exactly like one
+            // that is running slowly.
+            LogDiagnostic($"import could not be started: {ex.Message}");
+
+            ScanActivity.IsRunning = false;
+            ScanStatusLabel.Text = "The import could not be started on this device.";
+            StopScanButton.IsVisible = false;
+
+            await DisplayAlert("Import unavailable",
+                $"The background reader could not be started: {ex.Message}",
+                "OK");
         }
-        finally
-        {
-            _isInjecting = false;
-        }
+#else
+        await Task.CompletedTask;
+#endif
     }
 
-    // ─── Receiving reports ───────────────────────────────────────────────────
+    private void StartPolling()
+    {
+        if (_pollTimer is null)
+        {
+            _pollTimer = Dispatcher.CreateTimer();
+            _pollTimer.Interval = PollInterval;
+            _pollTimer.Tick += OnPollTick;
+        }
+
+        _pollTimer.Start();
+    }
+
+    private void StopPolling()
+    {
+        if (_pollTimer is null)
+            return;
+
+        _pollTimer.Stop();
+        _pollTimer.Tick -= OnPollTick;
+        _pollTimer = null;
+    }
+
+    /// <summary>
+    /// Follows the scan by reading the snapshot the service publishes.
+    /// <para>
+    /// Polling rather than being called back: the service and this page are in the same process, but the
+    /// scan is also allowed to finish while the app is closed, so its state has to be readable at any time
+    /// rather than only pushed at moments this page happens to be alive for.
+    /// </para>
+    /// </summary>
+    private async void OnPollTick(object? sender, EventArgs e)
+    {
+        if (_resultsShown || _isAdding)
+            return;
+
+        var snapshot = ContactScanHub.Store.Read();
+        if (snapshot is null)
+            return;
+
+        if (snapshot.IsStopped)
+        {
+            ShowSnapshotResults(snapshot);
+            return;
+        }
+
+        // The service can be killed without ever getting the chance to publish a stopping state. Without
+        // this the page would sit on a spinner that can never move again.
+        if (ContactScanSnapshot.IsAbandoned(snapshot, DateTime.UtcNow, AbandonedAfter))
+        {
+            LogDiagnostic("import was abandoned while the page was watching it");
+
+            _resultsShown = true;
+            StopPolling();
+            ContactScanHub.Store.Clear();
+
+            ScanActivity.IsRunning = false;
+            StopScanButton.IsVisible = false;
+            CloseScanButton.IsVisible = false;
+            ScanStatusLabel.Text = "The import stopped unexpectedly.";
+
+            await DisplayAlert("Import stopped",
+                "The background reader stopped before it finished. Open the page again to try once more.",
+                "OK");
+
+            return;
+        }
+
+        var text = ContactScanSnapshot.ProgressText(snapshot);
+        if (text != ScanStatusLabel.Text)
+            ScanStatusLabel.Text = text;
+    }
+
+    /// <summary>
+    /// Asks the running scan to stop. What was read before stopping is kept and offered, because the user
+    /// asked for their chats and a partial list is more use than none.
+    /// </summary>
+    private void OnStopScanClicked(object? sender, EventArgs e)
+    {
+        StopScanButton.IsEnabled = false;
+        ScanStatusLabel.Text = "Stopping…";
 
 #if ANDROID
-    /// <summary>
-    /// The bridge the scanner reports through.
-    /// <para>
-    /// Reports arrive on the WebView's JavaScript thread, so everything that touches the page is
-    /// marshalled back to the UI thread - the same arrangement the sending flow uses.
-    /// </para>
-    /// </summary>
-    [Microsoft.Maui.Controls.Internals.Preserve(AllMembers = true)]
-    internal sealed class ScanJsInterface : Java.Lang.Object
-    {
-        private readonly ImportContactsPage _page;
-
-        public ScanJsInterface(ImportContactsPage page)
+        try
         {
-            _page = page;
-        }
+            var context = Platform.CurrentActivity ?? Android.App.Application.Context;
+            var intent = new Android.Content.Intent(context, typeof(Platforms.Android.Services.ContactScanService));
+            intent.SetAction(AppConstants.ActionStopContactScan);
 
-        [Android.Webkit.JavascriptInterface]
-        [Java.Interop.Export("report")]
-        public void Report(string json)
-        {
-            _page.MainThreadDispatcher(() => _page.OnScanReported(json));
+            if (Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.O)
+                context.StartForegroundService(intent);
+            else
+                context.StartService(intent);
         }
-    }
+        catch (Exception ex)
+        {
+            LogDiagnostic($"import could not be stopped: {ex.Message}");
+        }
 #endif
 
-    /// <summary>Marshals a report onto the UI thread, wherever it came from.</summary>
-    private void MainThreadDispatcher(Action action) => MainThread.BeginInvokeOnMainThread(action);
-
-    /// <summary>
-    /// Handles one report from the page.
-    /// <para>
-    /// Because the scanner pushes on every line it logs, the very first report already proves the
-    /// script is running. That is what makes it possible to say which of "the script never ran" and
-    /// "the script ran and read nothing" actually happened.
-    /// </para>
-    /// </summary>
-    internal void OnScanReported(string json)
-    {
-        if (_scanFinished || _isAdding)
-            return;
-
-        var normalized = ContactScanReader.NormalizeJavaScriptResult(json);
-        if (!ContactScanReader.TryParse(normalized, out var scan, out _) || scan is null)
-            return;
-
-        _reportReceived = true;
-        _lastReportAt = DateTime.Now;
-        _stallCount = 0;
-
-        // Merged rather than replaced, so a scanner that restarted after a navigation adds to what
-        // is already known instead of throwing it away.
-        Accumulate(scan);
-
-        UpdateScanStatus(scan);
-
-        // The scanner's own log lines are copied into the app's log, because that is what carries
-        // the diagnostics - the page shape, the viewport, and any error thrown inside the page.
-        // Without this they would stay in the page and never reach an exportable file.
-        var scriptLine = scan.Log.Count > 0 ? scan.Log[^1] : string.Empty;
-        if (scriptLine.Length > 0 && scriptLine != _lastScriptLog)
-        {
-            _lastScriptLog = scriptLine;
-            LogDiagnostic($"reader: {scriptLine}");
-        }
-
-        LogDiagnostic($"scan report: {scan.Attempts} opened, {_accumulated.Count} known, done={scan.Done}");
-
-        if (scan.Done)
-            ShowResults(scan);
+        // The service publishes the stopped snapshot; the poll picks it up and shows whatever was read.
     }
 
-    private void Accumulate(ContactScanDto scan)
+    /// <summary>
+    /// Leaves the page without stopping the scan, which is the point of the whole arrangement: a long
+    /// friend list can be left to finish with the app closed.
+    /// </summary>
+    private async void OnCloseScanClicked(object? sender, EventArgs e)
     {
-        var batch = ContactScanReader.ToFriends(scan.Items);
-        if (batch.Count == 0)
-            return;
+        if (!_toldAboutBackground && !_resultsShown)
+        {
+            _toldAboutBackground = true;
+            await DisplayAlert("Still reading",
+                "The import keeps running while the app is closed. You will get a notification when it is done — open this page again to review the chats.",
+                "OK");
+        }
 
-        var merged = BackupMergePolicy.Merge(_accumulated, batch);
-        _accumulated.Clear();
-        _accumulated.AddRange(merged.Friends);
+        await Navigation.PopAsync();
     }
 
     /// <summary>
@@ -429,212 +328,54 @@ public partial class ImportContactsPage : ContentPage
         }
     }
 
-    // ─── Watchdog ────────────────────────────────────────────────────────────
-
-    private void StartWatchdog()
-    {
-        if (_watchdogTimer is null)
-        {
-            _watchdogTimer = Dispatcher.CreateTimer();
-            _watchdogTimer.Interval = TimeSpan.FromSeconds(2);
-            _watchdogTimer.Tick += OnWatchdogTick;
-        }
-
-        _watchdogTimer.Start();
-        _startedAt = DateTime.Now;
-        _lastInjectionAt = DateTime.MinValue;
-    }
-
-    private void StopWatchdog()
-    {
-        if (_watchdogTimer is null)
-            return;
-
-        _watchdogTimer.Stop();
-        _watchdogTimer.Tick -= OnWatchdogTick;
-        _watchdogTimer = null;
-    }
-
-    /// <summary>
-    /// Drives the scan: loads the inbox if the platform view was not ready, keeps sending the script
-    /// until the page reports, and gives up with an explanation once it is clear nothing will.
-    /// <para>
-    /// The retrying is the important part. Sending the script once and hoping relies on that one
-    /// attempt landing after the page is ready; a retry costs nothing because the script refuses to
-    /// restart itself, and it recovers from an injection that was too early, a page that navigated
-    /// afterwards, and a platform view that only appeared a moment later.
-    /// </para>
-    /// </summary>
-    private async void OnWatchdogTick(object? sender, EventArgs e)
-    {
-        if (_scanFinished || _isAdding)
-            return;
-
-        // Still no platform view when the page appeared: try again every tick until there is one.
-        LoadInboxIfPossible();
-
-        // A report means the scanner started. From here the question is whether it is still working,
-        // which is answered by how long ago the last report arrived - not by whether one ever did.
-        if (_reportReceived)
-        {
-            if (DateTime.Now - _lastReportAt <= StallTimeout)
-            {
-                ScanStatusLabel.Text = _lastStatus;
-                return;
-            }
-
-            // Nothing new for a while. The page's JavaScript context does not survive a navigation,
-            // and opening a chat can navigate, so the scanner may simply no longer exist.
-            _stallCount++;
-            LogDiagnostic($"scan stalled (report {_stallCount}), {_accumulated.Count} chats known so far");
-
-            if (_stallCount >= 2)
-            {
-                // Resending did not bring it back. Whatever was found is still worth offering.
-                await FinishStalledAsync();
-                return;
-            }
-
-            _lastReportAt = DateTime.Now;
-            _lastInjectionAt = DateTime.MinValue;
-            InjectScanner();
-            ScanStatusLabel.Text = $"Reading your chats… restarting the reader (attempt {_injectionAttempts})";
-            return;
-        }
-
-        if (DateTime.Now - _lastInjectionAt > ReInjectEvery)
-        {
-            InjectScanner();
-            ScanStatusLabel.Text = $"Waiting for the scanner to start… (attempt {_injectionAttempts})";
-            return;
-        }
-
-        if (DateTime.Now - _startedAt > ScanDeadline)
-            await GiveUpOnScanAsync("The scanner did not start in the page");
-    }
-
-    /// <summary>
-    /// Ends a scan that stopped reporting, using what was collected before it stopped.
-    /// <para>
-    /// Partial results are deliberately preferred over an error: the user asked to read their chats,
-    /// and offering the ones that were read is more useful than discarding them because the last few
-    /// were not. What was read is stated plainly so the number is not mistaken for the whole list.
-    /// </para>
-    /// </summary>
-    private async Task FinishStalledAsync()
-    {
-        if (_scanFinished)
-            return;
-
-        LogDiagnostic($"scan stopped responding; finishing with {_accumulated.Count} chats");
-
-        if (_accumulated.Count > 0)
-        {
-            ShowResults(new ContactScanDto { Attempts = _injectionAttempts });
-            await DisplayAlert("Reader stopped early",
-                $"The reader stopped responding, so only {_accumulated.Count} chats could be read. "
-                + "They are listed below - check the list before adding, and try again for the rest.",
-                "OK");
-            return;
-        }
-
-        await GiveUpOnScanAsync("The reader stopped responding");
-    }
-
-    /// <summary>
-    /// How long without a report before the scanner is treated as stopped. The scanner reports every
-    /// few seconds while it works, so silence for this long means it is no longer running.
-    /// </summary>
-    private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(20);
-
-    /// <summary>
-    /// How long to wait for the first report before concluding the script cannot run on this page.
-    /// Generous, because it is retrying the whole time rather than waiting on one attempt.
-    /// </summary>
-    private static readonly TimeSpan ScanDeadline = TimeSpan.FromSeconds(90);
-
-    /// <summary>How often to resend the script while nothing has come back.</summary>
-    private static readonly TimeSpan ReInjectEvery = TimeSpan.FromSeconds(6);
-
-    /// <summary>
-    /// Shows what the scanner is doing.
-    /// <para>
-    /// The scanner opens each conversation in turn to read its real name, which takes a moment per
-    /// chat, so the count of chats checked is shown too. Without it a scan that is working steadily
-    /// looks like one that has stalled.
-    /// </para>
-    /// </summary>
-    private void UpdateScanStatus(ContactScanDto scan)
-    {
-        var text = scan.Items.Count > 0
-            ? $"Reading your chats… {scan.Items.Count} found, {scan.Attempts} checked"
-            : scan.Attempts > 0
-                ? $"Reading your chats… opening chat {scan.Attempts}"
-                : "Reading your chats…";
-
-        _lastStatus = text;
-
-        if (text != ScanStatusLabel.Text)
-            ScanStatusLabel.Text = text;
-    }
-
-    private async Task GiveUpOnScanAsync(string title)
-    {
-        if (_scanFinished)
-            return;
-
-        _scanFinished = true;
-        StopWatchdog();
-
-        ScanStatusLabel.Text = "Nothing could be read from the inbox.";
-
-        // The wording depends on which of the two failures this was, because they are fixed in
-        // completely different places. The counts are included because they are what distinguishes
-        // "the page never loaded" from "the script was sent but the page refused it".
-        var body = _reportReceived
-            ? "The scanner ran in the page but could not read the conversation list, so TikTok's page layout is probably not what it expects."
-            : $"The scanner did not run in the page at all, so nothing was ever read - this is a fault in the app, not in your inbox. "
-              + $"(page loaded: {(_pageLoaded ? "yes" : "no")}, script sent {_injectionAttempts} time(s)).";
-
-        await DisplayAlert(title,
-            body + "\n\nOpen the inbox once from the Dashboard, make sure you are signed in, then try again.",
-            "OK");
-
-        LogDiagnostic($"import gave up: {title} (page loaded={_pageLoaded}, script sent {_injectionAttempts} time(s), reported={_reportReceived})");
-        await Navigation.PopAsync();
-    }
-
     // ─── Results ─────────────────────────────────────────────────────────────
 
-    private async void ShowResults(ContactScanDto scan)
+    /// <summary>
+    /// Shows what the scan read, once it has stopped for any reason.
+    /// <para>
+    /// Taken from the stored snapshot rather than from a live report, so a scan that finished while the app
+    /// was closed is shown exactly like one that finished with the page open.
+    /// </para>
+    /// </summary>
+    private async void ShowSnapshotResults(ContactScanSnapshot snapshot)
     {
-        _scanFinished = true;
-        StopWatchdog();
+        if (_resultsShown)
+            return;
 
-        // Taken from what was accumulated across every report, not from the last payload: a scanner
-        // that restarted would otherwise offer only what it found since the restart.
-        var scanned = _accumulated.Count > 0
-            ? _accumulated
-            : ContactScanReader.ToFriends(scan.Items);
+        _resultsShown = true;
+        StopPolling();
+
+        ScanActivity.IsRunning = false;
+        ScanStatusLabel.Text = ContactScanSnapshot.ProgressText(snapshot);
+        StopScanButton.IsVisible = false;
+        CloseScanButton.IsVisible = false;
+
+        var scanned = ContactScanReader.ToFriends(snapshot.Items);
 
         // Only what is not on the list already. An entry the user has had for months is not something to
         // confirm again, and reviewing it would bury the ones that are actually new.
         var found = ContactScanReader.SelectNew(_settingsService.GetFriendsList(), scanned);
         var alreadyKnown = scanned.Count - found.Count;
 
-        ScanWebView.IsVisible = false;
-        CancelScanButton.IsVisible = false;
+        if (scanned.Count == 0)
+        {
+            await DisplayAlert(
+                snapshot.Phase == ContactScanPhase.Failed ? "Import failed" : "Nothing to add",
+                snapshot.Phase == ContactScanPhase.Failed
+                    ? ContactScanSnapshot.SummaryText(snapshot)
+                    : ContactScanReader.DescribeEmptyScan(snapshot.ToScanDto()),
+                "OK");
+
+            await Navigation.PopAsync();
+            return;
+        }
 
         if (found.Count == 0)
         {
-            ScanStatusLabel.Text = scanned.Count == 0
-                ? "No conversations were read from your inbox."
-                : "Everyone found is already on your list.";
+            ScanStatusLabel.Text = "Everyone found is already on your list.";
 
             await DisplayAlert("Nothing to add",
-                scanned.Count == 0
-                    ? ContactScanReader.DescribeEmptyScan(scan)
-                    : $"Read {scanned.Count} conversations, and all of them are already on your list.",
+                $"Read {scanned.Count} conversations, and all of them are already on your list.",
                 "OK");
 
             await Navigation.PopAsync();
@@ -647,10 +388,31 @@ public partial class ImportContactsPage : ContentPage
             + (alreadyKnown > 0 ? $"{alreadyKnown} were already on your list. " : string.Empty)
             + "Whatever is ticked is added to the end of your send order.";
 
+        // A scan that stopped early has to say so, or a short list reads as a complete one.
+        ResultsWarningLabel.Text = snapshot.Message;
+        ResultsWarningLabel.IsVisible = snapshot.Message.Length > 0;
+
         ShowRows();
 
         ResultsPanel.IsVisible = true;
-        await Task.CompletedTask;
+    }
+
+    /// <summary>Starts a fresh scan, forgetting the results that are on screen.</summary>
+    private void OnScanAgainClicked(object? sender, EventArgs e)
+    {
+        _resultsShown = false;
+        _draft = new ImportDraft(null);
+        ShowRows();
+
+        ResultsPanel.IsVisible = false;
+        ScanActivity.IsRunning = true;
+        StopScanButton.IsVisible = true;
+        StopScanButton.IsEnabled = true;
+        CloseScanButton.IsVisible = true;
+        ScanStatusLabel.Text = "Opening your inbox…";
+
+        StartServiceScan();
+        StartPolling();
     }
 
     /// <summary>Draws the review list from the draft, and refreshes what depends on the selection.</summary>
@@ -910,9 +672,18 @@ public partial class ImportContactsPage : ContentPage
         }
     }
 
+    /// <summary>
+    /// Throws the scanned list away.
+    /// <para>
+    /// The stored scan is cleared as well as the page being left, because the store is what this page reads
+    /// on appearing: without clearing it, opening the page again would offer the same results back, which
+    /// is not what discarding them means.
+    /// </para>
+    /// </summary>
     private async void OnCancelClicked(object? sender, EventArgs e)
     {
-        StopWatchdog();
+        ContactScanHub.Store.Clear();
+        StopPolling();
         await Navigation.PopAsync();
     }
 

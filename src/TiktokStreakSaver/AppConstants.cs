@@ -30,6 +30,15 @@ public static class AppConstants
 
     public const string RunLogsFileName = "run_logs.txt";
 
+    /// <summary>
+    /// The chat import's progress and results. Kept on disk so an import started in the service can be
+    /// collected by the page later, including after the app was closed and reopened.
+    /// </summary>
+    public const string ContactScanFileName = "contact_scan.json";
+
+    /// <summary>Stops a chat import that is running. Sent to the import service by the page and by the notification.</summary>
+    public const string ActionStopContactScan = PackageName + ".ACTION_STOP_CONTACT_SCAN";
+
     public const string RunHistoryFileName = "run_history.json";
 
     public const string MauiRunTraceFileName = "maui_run_trace.txt";

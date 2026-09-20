@@ -15,7 +15,7 @@
                 <Label Text="Reading your inbox"
                        Style="{StaticResource PageTitleLabel}"
                        HorizontalOptions="Start"/>
-                <Label Text="This page opens TikTok inside the app so it can read your conversations, then adds the ones you choose, all at once. It opens each chat in turn to read the real name, so a long list takes a while. Nothing is sent."
+                <Label Text="The app reads your TikTok conversations and then adds the ones you choose, all at once. It opens each chat in turn to read the real name, so a long list takes a while — you can close the app while it works and it will keep going. Nothing is sent."
                        FontFamily="InterRegular"
                        FontSize="13"
                        TextColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray400}}"
@@ -23,27 +23,37 @@
                        HorizontalOptions="Start"/>
             </VerticalStackLayout>
 
-            <Label x:Name="ScanStatusLabel"
-                   Text="Opening your inbox…"
-                   Style="{StaticResource DataLabel}"
-                   LineBreakMode="WordWrap"/>
+            <!--
+                There is no TikTok page on this screen any more, and that is deliberate. The scan runs in a
+                service against its own WebView, so there is nothing here to tap, scroll or interfere with,
+                and nothing a stray touch can do to a scan that is half way through the inbox.
+            -->
+            <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
+                <ActivityIndicator x:Name="ScanActivity"
+                                   IsRunning="True"
+                                   WidthRequest="18"
+                                   HeightRequest="18"
+                                   Color="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource Primary}}"
+                                   VerticalOptions="Center"/>
+                <Label x:Name="ScanStatusLabel"
+                       Text="Opening your inbox…"
+                       Style="{StaticResource DataLabel}"
+                       LineBreakMode="WordWrap"
+                       VerticalOptions="Center"/>
+            </HorizontalStackLayout>
 
-            <Button x:Name="CancelScanButton"
-                    Text="Cancel"
-                    Style="{StaticResource TextButton}"
-                    HorizontalOptions="Start"
-                    Clicked="OnCancelClicked"/>
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                <Button x:Name="CloseScanButton"
+                        Text="Run in background"
+                        Style="{StaticResource TextButton}"
+                        Clicked="OnCloseScanClicked"/>
+                <Button x:Name="StopScanButton"
+                        Grid.Column="1"
+                        Text="Stop"
+                        Style="{StaticResource TextButton}"
+                        Clicked="OnStopScanClicked"/>
+            </Grid>
         </VerticalStackLayout>
-
-        <!--
-            The live TikTok inbox. It is shown rather than hidden on purpose: the scan is driven by
-            scrolling a real page, and seeing it makes a failure obvious - an empty list, a login
-            wall - instead of leaving a spinner that never explains itself.
-        -->
-        <WebView x:Name="ScanWebView"
-                 Grid.Row="1"
-                 Navigating="OnScanNavigating"
-                 Navigated="OnScanNavigated"/>
 
         <ScrollView x:Name="ResultsPanel" Grid.Row="1" IsVisible="False">
             <VerticalStackLayout Padding="20" Spacing="14"
@@ -56,6 +66,17 @@
                     <Label x:Name="ResultsDetailLabel"
                            Text=""
                            Style="{StaticResource DataLabel}"
+                           LineBreakMode="WordWrap"/>
+                    <!--
+                        Shown when the scan stopped before the end of the list. Without it a short list of
+                        chats reads as a complete one, and the missing half stays invisible.
+                    -->
+                    <Label x:Name="ResultsWarningLabel"
+                           Text=""
+                           IsVisible="False"
+                           FontFamily="InterRegular"
+                           FontSize="13"
+                           TextColor="{AppThemeBinding Light={StaticResource DeleteColor}, Dark={StaticResource DeleteColor}}"
                            LineBreakMode="WordWrap"/>
                 </VerticalStackLayout>
 
@@ -74,6 +95,11 @@
                             Text="Select none"
                             Style="{StaticResource TextButton}"
                             Clicked="OnSelectNoneClicked"/>
+                    <Button Grid.Column="2"
+                            Text="Scan again"
+                            Style="{StaticResource TextButton}"
+                            HorizontalOptions="End"
+                            Clicked="OnScanAgainClicked"/>
                 </Grid>
 
                 <Label x:Name="ResultsBlockedLabel"
