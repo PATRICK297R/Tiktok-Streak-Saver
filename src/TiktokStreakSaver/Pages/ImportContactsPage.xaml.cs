@@ -76,18 +76,26 @@ public partial class ImportContactsPage : ContentPage
         _sessionService = new SessionService();
     }
 
-    protected override async void OnAppearing()
+    protected override void OnAppearing()
     {
         base.OnAppearing();
+
+        // Re-evaluated on every visit rather than once, because coming back from the sign-in page is exactly
+        // the moment this has to look again.
+        _resultsShown = false;
+        ResultsPanel.IsVisible = false;
+        OutcomePanel.IsVisible = false;
 
         // The inbox needs a session; without one TikTok shows a login wall and the scan would report
         // "nothing found", which reads like a bug rather than a missing login.
         if (!_sessionService.IsSessionValid())
         {
-            await DisplayAlert("Login required",
+            // Offered rather than enforced by closing the page. Being told to sign in and then having the
+            // page close under you is a dead end: the sign-in it needs is one page away, and there is no way
+            // back to the import from where you are left standing.
+            ShowScanOutcome("Sign in required",
                 "Sign in to TikTok first, then import your chats.",
-                "OK");
-            await Navigation.PopAsync();
+                offerSignIn: true);
             return;
         }
 
@@ -120,10 +128,9 @@ public partial class ImportContactsPage : ContentPage
         // equivalent on iOS, and Apple has nothing like a foreground service to keep a WebView reading
         // while the app is closed - which is the point of the feature. Saying so plainly is better than a
         // progress screen that can never move.
-        await DisplayAlert("Not available on iPhone",
+        ShowScanOutcome("Not available on iPhone",
             "Importing your chats needs Android, so it is not available on iPhone yet.",
-            "OK");
-        await Navigation.PopAsync();
+            offerSignIn: false);
 #endif
     }
 
@@ -211,7 +218,7 @@ public partial class ImportContactsPage : ContentPage
     /// rather than only pushed at moments this page happens to be alive for.
     /// </para>
     /// </summary>
-    private async void OnPollTick(object? sender, EventArgs e)
+    private void OnPollTick(object? sender, EventArgs e)
     {
         if (_resultsShown || _isAdding)
             return;
@@ -231,20 +238,13 @@ public partial class ImportContactsPage : ContentPage
         if (ContactScanSnapshot.IsAbandoned(snapshot, DateTime.UtcNow, AbandonedAfter))
         {
             LogDiagnostic("import was abandoned while the page was watching it");
-
-            _resultsShown = true;
-            StopPolling();
             ContactScanHub.Store.Clear();
 
-            ScanActivity.IsRunning = false;
-            StopScanButton.IsVisible = false;
-            CloseScanButton.IsVisible = false;
-            ScanStatusLabel.Text = "The import stopped unexpectedly.";
-
-            await DisplayAlert("Import stopped",
-                "The background reader stopped before it finished. Open the page again to try once more.",
-                "OK");
-
+            // Offered as a panel rather than an alert, so the retry it needs is one tap away instead of
+            // being a message about a problem with no way to act on it.
+            ShowScanOutcome("Import stopped",
+                "The background reader stopped before it finished. Try again, or close the app and reopen it if this keeps happening.",
+                offerSignIn: false);
             return;
         }
 
@@ -336,8 +336,12 @@ public partial class ImportContactsPage : ContentPage
     /// Taken from the stored snapshot rather than from a live report, so a scan that finished while the app
     /// was closed is shown exactly like one that finished with the page open.
     /// </para>
+    /// <para>
+    /// When there is nothing to offer, the reason and a way forward are shown instead - see
+    /// <see cref="ShowScanOutcome"/>.
+    /// </para>
     /// </summary>
-    private async void ShowSnapshotResults(ContactScanSnapshot snapshot)
+    private void ShowSnapshotResults(ContactScanSnapshot snapshot)
     {
         if (_resultsShown)
             return;
@@ -359,26 +363,29 @@ public partial class ImportContactsPage : ContentPage
 
         if (scanned.Count == 0)
         {
-            await DisplayAlert(
-                snapshot.Phase == ContactScanPhase.Failed ? "Import failed" : "Nothing to add",
-                snapshot.Phase == ContactScanPhase.Failed
-                    ? ContactScanSnapshot.SummaryText(snapshot)
-                    : ContactScanReader.DescribeEmptyScan(snapshot.ToScanDto()),
-                "OK");
+            // Kept on the page with a way forward instead of closing on a message. Closing was the dead end:
+            // the scan had just failed, the reason usually points at something the user has to fix, and the
+            // only place to fix it from was the page that had just disappeared.
+            var reason = snapshot.Phase == ContactScanPhase.Failed
+                ? ContactScanSnapshot.SummaryText(snapshot)
+                : ContactScanReader.DescribeEmptyScan(snapshot.ToScanDto());
 
-            await Navigation.PopAsync();
+            ShowScanOutcome(
+                snapshot.Phase == ContactScanPhase.Failed ? "Import failed" : "Nothing could be read",
+                reason,
+                // A rejected session is much the commonest reason an import fails and it is the one the user
+                // can do something about, so the way to it is offered rather than described. It costs nothing
+                // when the session turns out to have been fine.
+                offerSignIn: snapshot.Phase == ContactScanPhase.Failed);
             return;
         }
 
         if (found.Count == 0)
         {
-            ScanStatusLabel.Text = "Everyone found is already on your list.";
-
-            await DisplayAlert("Nothing to add",
-                $"Read {scanned.Count} conversations, and all of them are already on your list.",
-                "OK");
-
-            await Navigation.PopAsync();
+            // A success with nothing to do, which still needs a way out that is not "close and start again".
+            ShowScanOutcome("Nothing to add",
+                $"Read {scanned.Count} {(scanned.Count == 1 ? "conversation" : "conversations")}, and all of them are already on your list.",
+                offerSignIn: false);
             return;
         }
 
@@ -394,10 +401,57 @@ public partial class ImportContactsPage : ContentPage
 
         ShowRows();
 
+        OutcomePanel.IsVisible = false;
         ResultsPanel.IsVisible = true;
     }
 
-    /// <summary>Starts a fresh scan, forgetting the results that are on screen.</summary>
+    /// <summary>
+    /// Shows a scan that produced nothing usable, with the reason and a way forward.
+    /// <para>
+    /// Every one of these states used to close the page on an alert. That left the user with a message about
+    /// something they had to fix - sign in, check the connection - and no way to act on it from where they
+    /// were standing, so the only option was to go and find the import again. The page stays, and Try again
+    /// is always there.
+    /// </para>
+    /// </summary>
+    private void ShowScanOutcome(string title, string reason, bool offerSignIn)
+    {
+        _resultsShown = true;
+        StopPolling();
+
+        ScanActivity.IsRunning = false;
+        ScanStatusLabel.Text = title;
+        StopScanButton.IsVisible = false;
+        CloseScanButton.IsVisible = false;
+
+        ResultsPanel.IsVisible = false;
+
+        OutcomeTitleLabel.Text = title;
+        OutcomeReasonLabel.Text = reason;
+        SignInButton.IsVisible = offerSignIn;
+        OutcomePanel.IsVisible = true;
+    }
+
+    /// <summary>
+    /// Opens the sign-in page, and comes back here when it closes.
+    /// <para>
+    /// Returned to on purpose: the import is what the user was doing, and the page re-reads the session when
+    /// it appears, so signing in leads straight back to a scan rather than to the Profile page they would
+    /// then have to navigate out of.
+    /// </para>
+    /// </summary>
+    private async void OnSignInClicked(object? sender, EventArgs e)
+    {
+        await Navigation.PushAsync(new LoginPage());
+    }
+
+    /// <summary>
+    /// Starts a fresh scan, forgetting whatever is on screen.
+    /// <para>
+    /// Used by both "Scan again" and "Try again": they are the same action from the user's point of view, and
+    /// having two would only be two things to keep working.
+    /// </para>
+    /// </summary>
     private void OnScanAgainClicked(object? sender, EventArgs e)
     {
         _resultsShown = false;
@@ -405,6 +459,8 @@ public partial class ImportContactsPage : ContentPage
         ShowRows();
 
         ResultsPanel.IsVisible = false;
+        OutcomePanel.IsVisible = false;
+
         ScanActivity.IsRunning = true;
         StopScanButton.IsVisible = true;
         StopScanButton.IsEnabled = true;

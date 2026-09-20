@@ -93,6 +93,12 @@ public class ContactScanService : Service
     private int _stallCount;
     private string _lastScriptLog = string.Empty;
 
+    /// <summary>
+    /// The last URL the reader was deliberately not sent to, so that is logged once per page rather than
+    /// on every watchdog tick.
+    /// </summary>
+    private string? _lastSkippedUrl;
+
     private DateTime _lastNotificationAt;
     private int _lastNotifiedAttempts = -1;
 
@@ -209,6 +215,7 @@ public class ContactScanService : Service
 
         _lastNotifiedAttempts = -1;
         _lastNotificationAt = DateTime.MinValue;
+        _lastSkippedUrl = null;
 
         _startedAt = DateTime.Now;
         _lastReportAt = DateTime.Now;
@@ -594,19 +601,55 @@ public class ContactScanService : Service
         if (DateTime.Now - _lastInjectionAt > ReInjectEvery)
         {
             Inject();
-            UpdateProgressNotification($"Opening your inbox… (attempt {_injectionAttempts})", force: true);
+
+            // The attempt count is only worth showing once something has actually been sent. Held back
+            // because the inbox has not loaded, it would read "attempt 0" and look broken.
+            UpdateProgressNotification(
+                _injectionAttempts == 0
+                    ? "Opening your inbox…"
+                    : $"Opening your inbox… (attempt {_injectionAttempts})",
+                force: true);
             return;
         }
 
         if (DateTime.Now - _startedAt > ScanDeadline)
-            Finish(ContactScanPhase.Failed, "The reader did not start on the page.");
+        {
+            // Which of the two failures this was matters, because they are fixed in different places: a page
+            // that never loaded is the connection, a script that never ran is the app.
+            Finish(ContactScanPhase.Failed, _lastSkippedUrl is not null
+                ? "TikTok's inbox never loaded — the page stayed blank. Check your connection, then try again."
+                : "The reader did not start on the page.");
+        }
     }
 
-    /// <summary>Sends the scanner into the page.</summary>
+    /// <summary>
+    /// Sends the scanner into the page, but only when the page is TikTok's inbox.
+    /// <para>
+    /// The gate is the important part. A WebView starts on a blank document and can end up on one again
+    /// after a load it cannot perform, and the reader cannot tell that from an inbox with no conversations
+    /// in it: it waits for conversation rows, finds none, and reports a finished scan with nothing read.
+    /// Letting it run there produces a scan that looks like a successful read of an empty inbox and reports
+    /// <c>about:blank</c> as the page it read - a dead end for the user and no use as a diagnosis. So it
+    /// waits for the real page instead, and the log says which page it was waiting on.
+    /// </para>
+    /// </summary>
     private void Inject()
     {
         if (_finished || _script.Length == 0 || _webView is null)
             return;
+
+        var url = _webView.Url;
+
+        if (!WebViewNavigationPolicy.IsInbox(url))
+        {
+            if (url != _lastSkippedUrl)
+            {
+                _lastSkippedUrl = url;
+                LogDiagnostic($"reader held back — not the inbox yet ({Describe(url)})");
+            }
+
+            return;
+        }
 
         try
         {
@@ -619,6 +662,29 @@ public class ContactScanService : Service
         {
             LogDiagnostic($"reader script could not be sent: {ex.Message}");
         }
+    }
+
+    /// <summary>Names a URL for the log, including the cases where it has nothing useful in it.</summary>
+    private static string Describe(string? url) =>
+        WebViewNavigationPolicy.IsBlank(url) ? "a blank page" : url!;
+
+    /// <summary>Opens a URL in the headless WebView, on the main thread.</summary>
+    private void LoadUrl(string url)
+    {
+        _mainHandler?.Post(() =>
+        {
+            if (_finished)
+                return;
+
+            try
+            {
+                _webView?.LoadUrl(url);
+            }
+            catch (Exception ex)
+            {
+                LogDiagnostic($"could not open {url}: {ex.Message}");
+            }
+        });
     }
 
     // ─── Receiving reports ───────────────────────────────────────────────────
@@ -664,12 +730,44 @@ public class ContactScanService : Service
 
         if (scan.Done)
         {
+            // A finished scan that read nothing from a page that is not the inbox is not a result: the reader
+            // ran somewhere useless and reported the only thing it could, which is nothing. Offering that to
+            // the user is how an import ends at a dead end, so the inbox is reopened and the scan carries on.
+            // The overall deadline still bounds how long that can go on.
+            if (_accumulated.Count == 0
+                && !WebViewNavigationPolicy.IsInbox(scan.Url)
+                && DateTime.Now - _startedAt <= ScanDeadline)
+            {
+                LogDiagnostic($"reader finished on the wrong page ({Describe(scan.Url)}) — reopening the inbox");
+                ReopenInbox();
+                return;
+            }
+
             LogDiagnostic($"import finished: {_accumulated.Count} chats from {_attempts} opened");
             Finish(ContactScanPhase.Finished, string.Empty);
             return;
         }
 
         Publish(ContactScanPhase.Running, string.Empty);
+    }
+
+    /// <summary>
+    /// Reopens the inbox after the reader found itself on a page with nothing in it.
+    /// <para>
+    /// The report state is reset as well as the page being reloaded: the report that prompted this came from
+    /// a document that no longer exists, so it must not count as proof that the reader is running - otherwise
+    /// the watchdog would see a live scan and wait for reports that can never come.
+    /// </para>
+    /// </summary>
+    private void ReopenInbox()
+    {
+        _reportReceived = false;
+        _lastInjectionAt = DateTime.MinValue;
+        _lastSkippedUrl = null;
+        _lastReportAt = DateTime.Now;
+
+        UpdateProgressNotification("Opening your inbox…", force: true);
+        LoadUrl(MessagesUrl);
     }
 
     /// <summary>
@@ -841,15 +939,23 @@ public class ContactScanService : Service
 
         public override bool ShouldOverrideUrlLoading(WebView? view, IWebResourceRequest? request)
         {
-            // TikTok tries to hand off to its own app with a custom scheme, which a WebView cannot load;
-            // following it would strand the scan on a blank error page.
-            if (request?.Url is not null &&
-                (request.Url.EncodedSchemeSpecificPart ?? string.Empty).StartsWith("//aweme"))
-            {
-                return true;
-            }
+            var url = request?.Url?.ToString();
+            if (string.IsNullOrEmpty(url))
+                return false;
 
-            return false;
+            if (WebViewNavigationPolicy.IsLoadable(url))
+                return false;
+
+            // TikTok signals its native app to open with custom schemes (snssdk1180://, intent://). A WebView
+            // cannot load those, and Android replaces them with a blank error page - which is one of the ways
+            // the reader ends up running on a document with nothing in it. Cancelled instead, and the real
+            // destination followed when the URL carries one. These are the same rules the login WebView uses,
+            // which is why they live in the shared policy rather than being written out again here.
+            var target = WebViewNavigationPolicy.ExtractHttpDestination(url);
+            if (target is not null)
+                _service.LoadUrl(target);
+
+            return true;
         }
     }
 }

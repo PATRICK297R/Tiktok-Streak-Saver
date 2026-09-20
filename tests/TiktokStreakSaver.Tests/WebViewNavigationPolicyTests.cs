@@ -126,4 +126,48 @@ public class WebViewNavigationPolicyTests
     {
         Assert.False(WebViewNavigationPolicy.IsLoginWall(url));
     }
+
+    [Theory]
+    [InlineData("https://www.tiktok.com/messages")]
+    [InlineData("https://www.tiktok.com/messages?lang=en")]
+    [InlineData("https://m.tiktok.com/messages")]
+    public void TheInboxIsRecognised(string url)
+    {
+        // The reader is only ever sent here. Anything else and it reads a page that has no conversations
+        // in it and reports a successful scan of an empty inbox.
+        Assert.True(WebViewNavigationPolicy.IsInbox(url));
+    }
+
+    [Theory]
+    [InlineData("about:blank")]
+    [InlineData("about:")]
+    [InlineData("")]
+    [InlineData(null)]
+    [InlineData("https://www.tiktok.com/login")]
+    [InlineData("https://www.tiktok.com/foryou")]
+    [InlineData("data:text/html,hi")]
+    public void AnythingElseIsNotTheInbox(string? url)
+    {
+        Assert.False(WebViewNavigationPolicy.IsInbox(url));
+    }
+
+    [Theory]
+    [InlineData("about:blank")]
+    [InlineData("about:")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void ABlankPageIsRecognised(string? url)
+    {
+        // What a WebView shows before it has navigated anywhere, and after a load it could not perform.
+        Assert.True(WebViewNavigationPolicy.IsBlank(url));
+    }
+
+    [Theory]
+    [InlineData("https://www.tiktok.com/messages")]
+    [InlineData("data:text/html,hi")]
+    [InlineData("javascript:void(0)")]
+    public void APageWithContentIsNotBlank(string url)
+    {
+        Assert.False(WebViewNavigationPolicy.IsBlank(url));
+    }
 }

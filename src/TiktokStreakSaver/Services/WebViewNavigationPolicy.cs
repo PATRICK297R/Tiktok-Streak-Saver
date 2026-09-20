@@ -91,4 +91,28 @@ public static class WebViewNavigationPolicy
     /// </summary>
     public static bool IsLoginWall(string? url) =>
         !string.IsNullOrEmpty(url) && url.Contains("/login", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether the URL is TikTok's inbox, which is the only page the contact reader may run on.
+    /// <para>
+    /// This is not a nicety. The reader cannot tell a blank document from an inbox with no conversations in
+    /// it: it waits for conversation rows, finds none, and reports a finished scan with nothing read. Run on
+    /// a page that was still loading - or on the blank document a WebView starts with - it therefore
+    /// produces a scan that looks like a successful read of an empty inbox, reporting <c>about:blank</c> as
+    /// the page it read. That is both a dead end for the user and useless as a diagnosis, so the reader is
+    /// kept off anything that is not the inbox and left to wait for the real page.
+    /// </para>
+    /// </summary>
+    public static bool IsInbox(string? url) =>
+        !string.IsNullOrEmpty(url)
+        && url.Contains("tiktok.com", StringComparison.OrdinalIgnoreCase)
+        && url.Contains("/messages", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether the URL is a page with no content on it, which is what a WebView shows before it has
+    /// navigated anywhere and after a load it could not perform.
+    /// </summary>
+    public static bool IsBlank(string? url) =>
+        string.IsNullOrEmpty(url)
+        || url.StartsWith("about:", StringComparison.OrdinalIgnoreCase);
 }

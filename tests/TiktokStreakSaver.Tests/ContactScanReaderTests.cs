@@ -356,6 +356,43 @@ public class ContactScanReaderTests
         Assert.Contains("never reached", text);
     }
 
+    /// <summary>
+    /// This is the one the device actually reported: the reader ran on the blank document a WebView starts
+    /// with, found no rows, and finished - so the scan looked like a successful read of an empty inbox whose
+    /// URL happened to be about:blank. Saying so plainly is the difference between a user who knows to check
+    /// their connection and one who is told to sign in again for no reason.
+    /// </summary>
+    [Fact]
+    public void AReaderThatRanOnABlankPageSaysTheInboxNeverLoaded()
+    {
+        var scan = new ContactScanDto { Attempts = 0, Url = "about:blank" };
+
+        var text = ContactScanReader.DescribeEmptyScan(scan);
+
+        Assert.Contains("still blank", text);
+        Assert.Contains("never actually loaded", text);
+        Assert.DoesNotContain("did not stay on the inbox", text);
+        Assert.DoesNotContain("about:blank", text);
+    }
+
+    [Fact]
+    public void AReaderThatRanOnABlankPageIsNotToldToSignIn()
+    {
+        // Signing in is not the fix for a page that never loaded, and pointing at it sends the user to the
+        // wrong problem.
+        var text = ContactScanReader.DescribeEmptyScan(new ContactScanDto { Url = "about:blank" });
+
+        Assert.DoesNotContain("sign in", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void AnEmptyUrlReadsAsABlankPageToo()
+    {
+        var text = ContactScanReader.DescribeEmptyScan(new ContactScanDto { Url = string.Empty });
+
+        Assert.Contains("still blank", text);
+    }
+
     [Fact]
     public void TheDiagnosticsReadTheScannerStateWithItsCamelCaseKeys()
     {

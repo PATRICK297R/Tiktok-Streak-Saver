@@ -137,5 +137,53 @@
             </VerticalStackLayout>
         </ScrollView>
 
+        <!--
+            Shown whenever the scan produced nothing usable: a failure, an inbox that could not be read, or
+            a list where everything was already known. Every one of these used to close the page on an alert,
+            which left the user holding a message about something they had to fix - sign in, check the
+            connection - with no way to act on it from there. Try again is always offered.
+        -->
+        <ScrollView x:Name="OutcomePanel" Grid.Row="1" IsVisible="False">
+            <VerticalStackLayout Padding="20" Spacing="14"
+                                 BackgroundColor="{AppThemeBinding Light={StaticResource PageBackgroundLight}, Dark={StaticResource OffBlack}}">
+
+                <VerticalStackLayout Spacing="4">
+                    <Label x:Name="OutcomeTitleLabel"
+                           Text=""
+                           Style="{StaticResource ValueLabel}"/>
+                    <Label x:Name="OutcomeReasonLabel"
+                           Text=""
+                           Style="{StaticResource DataLabel}"
+                           LineBreakMode="WordWrap"/>
+                </VerticalStackLayout>
+
+                <Button x:Name="RetryScanButton"
+                        Text="Try again"
+                        BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
+                        TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
+                        CornerRadius="14"
+                        HeightRequest="44"
+                        Clicked="OnScanAgainClicked"/>
+
+                <!--
+                    Shown when the reason is one a sign-in would fix. It opens the sign-in page and comes back
+                    here, because the import is what the user was doing.
+                -->
+                <Button x:Name="SignInButton"
+                        Text="Sign in to TikTok"
+                        IsVisible="False"
+                        BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray800}}"
+                        TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
+                        CornerRadius="14"
+                        HeightRequest="44"
+                        Clicked="OnSignInClicked"/>
+
+                <Button Text="Close"
+                        Style="{StaticResource TextButton}"
+                        HorizontalOptions="Center"
+                        Clicked="OnCancelClicked"/>
+            </VerticalStackLayout>
+        </ScrollView>
+
     </Grid>
 </ContentPage>

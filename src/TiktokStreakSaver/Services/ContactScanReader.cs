@@ -148,6 +148,15 @@ public static class ContactScanReader
 
         var lastStep = scan.Log.Count > 0 ? scan.Log[^1] : null;
 
+        // A blank page is its own case and needs saying plainly. Reported as "did not stay on the inbox" it
+        // reads as though TikTok had thrown the reader out, when what actually happened is that the inbox
+        // never loaded at all - which is a different problem with a different fix.
+        if (WebViewNavigationPolicy.IsBlank(scan.Url))
+        {
+            return "The reader ran on a page that was still blank, so TikTok's inbox never actually loaded. "
+                 + "That is usually the connection rather than your account — check it, then try again.";
+        }
+
         // A page that is not the inbox means the scan was looking in the wrong place entirely, which
         // is worth saying plainly rather than reporting as an empty list.
         if (scan.Url.Length > 0 && !scan.Url.Contains("/messages", StringComparison.OrdinalIgnoreCase))
