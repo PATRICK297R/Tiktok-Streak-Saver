@@ -67,6 +67,10 @@
         push();
     };
 
+    // Reported before anything else is touched, so that "the script is running" is established
+    // immediately. If it never arrives, the problem is the injection itself and not the page.
+    log('Scan started');
+
     var text = function (el) {
         if (!el) return '';
         return (el.textContent || '').replace(/\s+/g, ' ').trim();
@@ -235,11 +239,6 @@
 
         return true;
     };
-
-    // Published immediately so the app knows the scanner is running before the first chat is
-    // opened. Without this the first report would only arrive seconds later, and a scanner that
-    // had failed to start would be indistinguishable from one that was still waiting.
-    log('Scan started');
 
     // The first step waits for the WebView to lay the page out before looking for rows.
     setTimeout(step, 1500);

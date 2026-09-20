@@ -30,6 +30,13 @@ public partial class ImportContactsPage : ContentPage
     private bool _isInjecting;
     private bool _isAdding;
     private bool _reportReceived;
+
+    /// <summary>
+    /// The last status the scanner reported. Held so the watchdog can put it back after it has shown
+    /// its own "waiting" text, instead of leaving a message that no longer describes anything.
+    /// </summary>
+    private string _lastStatus = string.Empty;
+
     private List<FriendConfig> _found = new();
 
 #if ANDROID
@@ -38,11 +45,13 @@ public partial class ImportContactsPage : ContentPage
 #endif
 
     /// <summary>
-    /// Set when the script was sent to the page. Everything the watchdog reports is phrased around
-    /// this, because "the scanner ran and found nothing" and "the scanner never ran" are different
-    /// problems with different fixes.
+    /// When the page started trying to read the inbox, and when the script was last sent. Both are
+    /// needed: injections are repeated while nothing comes back, so a single "injected at" time
+    /// cannot also serve as the overall deadline.
     /// </summary>
-    private DateTime _injectedAt;
+    private DateTime _startedAt;
+    private DateTime _lastInjectionAt;
+    private int _injectionAttempts;
 
     public ImportContactsPage()
     {
@@ -84,6 +93,11 @@ public partial class ImportContactsPage : ContentPage
         }
 
         _scriptReady = true;
+
+        // The page drives itself from here: the watchdog loads the inbox if the platform view was
+        // not ready yet, keeps sending the script until it reports, and gives up with an explanation.
+        // Making it a driver rather than a deadline matters, because a single injection attempt that
+        // lands at the wrong moment leaves the page waiting with nothing to show for it.
         StartWatchdog();
 
         // The platform WebView may not exist yet while the page is appearing, and configuring one
@@ -246,10 +260,10 @@ public partial class ImportContactsPage : ContentPage
             _ = ScanWebView.EvaluateJavaScriptAsync(_scanScript);
 #endif
 
-            // Recorded so the watchdog can tell "the script never ran" apart from "the script ran and
-            // found nothing" - the two need different explanations.
-            _injectedAt = DateTime.Now;
-            ScanStatusLabel.Text = "Reading your chats… waiting for the message list";
+            // Recorded so the watchdog knows when to retry, and so the page can report how many
+            // attempts were made when the script never comes back.
+            _lastInjectionAt = DateTime.Now;
+            _injectionAttempts++;
         }
         catch (Exception ex)
         {
@@ -332,7 +346,8 @@ public partial class ImportContactsPage : ContentPage
         }
 
         _watchdogTimer.Start();
-        _injectedAt = DateTime.Now;
+        _startedAt = DateTime.Now;
+        _lastInjectionAt = DateTime.MinValue;
     }
 
     private void StopWatchdog()
@@ -346,13 +361,13 @@ public partial class ImportContactsPage : ContentPage
     }
 
     /// <summary>
-    /// Gives up when nothing arrives, with a message that names the actual cause.
+    /// Drives the scan: loads the inbox if the platform view was not ready, keeps sending the script
+    /// until the page reports, and gives up with an explanation once it is clear nothing will.
     /// <para>
-    /// The two cases are deliberately worded differently. A scanner that never reported at all means
-    /// the script did not run in the page, which is the app's problem. A scanner that reported but
-    /// never finished means it ran and could not read the list, which is a different investigation
-    /// entirely - and reporting both as "the inbox could not be read" is what sent me looking in the
-    /// wrong place before.
+    /// The retrying is the important part. Sending the script once and hoping relies on that one
+    /// attempt landing after the page is ready; a retry costs nothing because the script refuses to
+    /// restart itself, and it recovers from an injection that was too early, a page that navigated
+    /// afterwards, and a platform view that only appeared a moment later.
     /// </para>
     /// </summary>
     private async void OnWatchdogTick(object? sender, EventArgs e)
@@ -360,25 +375,36 @@ public partial class ImportContactsPage : ContentPage
         if (_scanFinished || _isAdding)
             return;
 
-        if (DateTime.Now - _injectedAt < ScanDeadline)
-            return;
+        // Still no platform view when the page appeared: try again every tick until there is one.
+        LoadInboxIfPossible();
 
+        // A report means the scanner is running. It enforces its own deadline and will publish a
+        // result, so there is nothing to chase.
         if (_reportReceived)
         {
-            // The scanner is alive and still working; the script has its own deadline and will
-            // publish a result, so it only needs the deadline extending.
-            _injectedAt = DateTime.Now;
+            ScanStatusLabel.Text = _lastStatus;
             return;
         }
 
-        await GiveUpOnScanAsync("The scanner did not start in the page");
+        if (DateTime.Now - _lastInjectionAt > ReInjectEvery)
+        {
+            InjectScanner();
+            ScanStatusLabel.Text = $"Waiting for the scanner to start… (attempt {_injectionAttempts})";
+            return;
+        }
+
+        if (DateTime.Now - _startedAt > ScanDeadline)
+            await GiveUpOnScanAsync("The scanner did not start in the page");
     }
 
     /// <summary>
-    /// How long to wait for the first report. Generous, because the page has to finish loading before
-    /// the script can be injected at all.
+    /// How long to wait for the first report before concluding the script cannot run on this page.
+    /// Generous, because it is retrying the whole time rather than waiting on one attempt.
     /// </summary>
-    private static readonly TimeSpan ScanDeadline = TimeSpan.FromSeconds(45);
+    private static readonly TimeSpan ScanDeadline = TimeSpan.FromSeconds(90);
+
+    /// <summary>How often to resend the script while nothing has come back.</summary>
+    private static readonly TimeSpan ReInjectEvery = TimeSpan.FromSeconds(6);
 
     /// <summary>
     /// Shows what the scanner is doing.
@@ -396,6 +422,8 @@ public partial class ImportContactsPage : ContentPage
                 ? $"Reading your chats… opening chat {scan.Attempts}"
                 : "Reading your chats…";
 
+        _lastStatus = text;
+
         if (text != ScanStatusLabel.Text)
             ScanStatusLabel.Text = text;
     }
@@ -411,10 +439,12 @@ public partial class ImportContactsPage : ContentPage
         ScanStatusLabel.Text = "Nothing could be read from the inbox.";
 
         // The wording depends on which of the two failures this was, because they are fixed in
-        // completely different places.
+        // completely different places. The counts are included because they are what distinguishes
+        // "the page never loaded" from "the script was sent but the page refused it".
         var body = _reportReceived
             ? "The scanner ran in the page but could not read the conversation list, so TikTok's page layout is probably not what it expects."
-            : "The scanner did not run in the page at all, so nothing was ever read - this is a fault in the app, not in your inbox.";
+            : $"The scanner did not run in the page at all, so nothing was ever read - this is a fault in the app, not in your inbox. "
+              + $"(page loaded: {(_pageLoaded ? "yes" : "no")}, script sent {_injectionAttempts} time(s)).";
 
         await DisplayAlert(title,
             body + "\n\nOpen the inbox once from the Dashboard, make sure you are signed in, then try again.",
