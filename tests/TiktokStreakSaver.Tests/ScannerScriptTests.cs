@@ -30,25 +30,43 @@ public class ScannerScriptTests
             return;
         }
 
-        var result = RunNode(harness, scanner);
-        if (result is null)
+        // The prepared script is what the device runs, and the two are not the same file: flattening
+        // the script onto one line turns a comment trailing a statement into a comment over everything
+        // that follows it. Handing the harness the raw file would leave that difference untested, so it
+        // gets exactly what the WebView gets.
+        var prepared = ScriptPreparation.ForInjection(System.IO.File.ReadAllText(scanner));
+        var preparedPath = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(), $"tiktok_read_contacts_{Guid.NewGuid():N}.js");
+
+        try
         {
-            // No Node.js here. Skipped rather than failed, because the scanner does not need it and
-            // the structural tests still guard its shape.
-            return;
+            System.IO.File.WriteAllText(preparedPath, prepared);
+            var result = RunNode(harness, preparedPath);
+            if (result is null)
+            {
+                // No Node.js here. Skipped rather than failed, because the scanner does not need it and
+                // the structural tests still guard its shape.
+                return;
+            }
+
+            Assert.True(result.Value.ExitCode == 0, result.Value.Output);
+
+            // The harness finished rather than giving up, and nothing in it failed.
+            Assert.Contains("RESULT scenarios=", result.Value.Output);
+            Assert.DoesNotContain("FAILED", result.Value.Output);
+
+            // The failures that reached a device, named here so they are visible in this file: a group
+            // must stay a group, a header that is still loading must not be recorded as "@", and a name
+            // of invisible filler must not become a contact with no name.
+            Assert.Contains("CHAT @alice \"Alice\"", result.Value.Output);
+            Assert.Contains("CHAT group \"Weekend Crew\"", result.Value.Output);
+            Assert.Contains("CHAT group \"Humas SMKN 1 TROWULAN\"", result.Value.Output);
+            Assert.Contains("CHAT @xznsenpai \"xznsenpai\"", result.Value.Output);
         }
-
-        Assert.True(result.Value.ExitCode == 0, result.Value.Output);
-
-        // The harness finished rather than giving up, and nothing in it failed.
-        Assert.Contains("RESULT scenarios=", result.Value.Output);
-        Assert.DoesNotContain("FAILED", result.Value.Output);
-
-        // The two failures that reached a device, named here so they are visible in this file: a group
-        // must stay a group, and a header that is still loading must not be recorded as "@".
-        Assert.Contains("CHAT @alice \"Alice\"", result.Value.Output);
-        Assert.Contains("CHAT group \"Weekend Crew\"", result.Value.Output);
-        Assert.Contains("CHAT group \"Humas SMKN 1 TROWULAN\"", result.Value.Output);
+        finally
+        {
+            try { System.IO.File.Delete(preparedPath); } catch (IOException) { }
+        }
     }
 
     [Fact]
@@ -91,9 +109,13 @@ public class ScannerScriptTests
     [InlineData("findHeader")]
     [InlineData("headerProfileLink")]
     [InlineData("distinctProfileLinks")]
+    [InlineData("avatarCount")]
     [InlineData("usernameFrom")]
+    [InlineData("isBlankChar")]
     [InlineData("isUsableName")]
     [InlineData("isUsableUsername")]
+    [InlineData("slugOf")]
+    [InlineData("looksGeneratedFromName")]
     [InlineData("headerName")]
     [InlineData("groupReason")]
     [InlineData("identifyOpenChat")]
@@ -102,7 +124,9 @@ public class ScannerScriptTests
     [InlineData("settle")]
     [InlineData("record")]
     [InlineData("readHeader")]
+    [InlineData("namelessPerson")]
     [InlineData("headerFacts")]
+    [InlineData("headerReport")]
     [InlineData("missChat")]
     public void TheBundledScannerDeclaresEachHelperInsideItsIife(string helper)
     {

@@ -320,24 +320,67 @@
                 return;
             }
 
-            missChat(stale ? 'Header never changed' : 'Header never settled', headerFacts(), indexBefore);
+            // Out of looks. A header that never changed is the previous chat, so there is nothing to
+            // file; one that never settled may still be a chat worth keeping.
+            var fallback = stale ? null : namelessPerson();
+            if (fallback) { settle(fallback); return; }
+
+            missChat(stale ? 'Header never changed' : 'Header never settled', headerReport(), indexBefore);
             return;
         }
 
         settle(entry);
     };
 
-    // What the header looks like right now, for the log. When a chat is given up on, this is what
-    // says whether the header was empty, had no link, or was showing something else entirely - the
-    // question a bare "could not be identified" leaves unanswered.
+    // A chat whose name never filled in, filed under its handle.
+    //
+    // Reached only after the header was read the full number of times, so a header that is merely slow
+    // is never mistaken for one that is blank. Some accounts are named with runs of invisible filler,
+    // and such a chat is a real chat that can be sent to: a contact under its handle is worth more than
+    // one silently dropped - or, as happened on a device, one filed under eleven invisible characters.
+    //
+    // A group is refused here rather than guessed at, because a group is matched by its name and there
+    // is no name to match; the other markers still apply, so a nameless chat with a member stack or a
+    // participant count is left to be skipped instead of being filed as a person.
+    var namelessPerson = function () {
+        var header = findHeader();
+        if (!header) return null;
+        if (groupReason(header, distinctProfileLinks(header), '', '')) return null;
+
+        var username = usernameFrom(headerProfileLink(header));
+        if (!isUsableUsername(username)) return null;
+
+        return {
+            username: username,
+            displayName: username,
+            isGroup: false,
+            reason: 'named by its handle'
+        };
+    };
+
+    // The header's own numbers, printed for every chat rather than only for the ones that fail.
+    //
+    // Whether a chat is a person or a group is decided from exactly these, so a log that shows only
+    // the decision cannot be argued with - and when a marker turns out to be wrong, these are what say
+    // which one to trust instead. The picture count and the class test are printed without deciding
+    // anything for that reason.
     var headerFacts = function () {
         var header = findHeader();
         if (!header) return 'no header';
 
-        return 'name="' + headerName(header).substring(0, 40) + '"'
-            + ', links=' + distinctProfileLinks(header)
-            + ', avatars=' + header.querySelectorAll('img').length
+        return 'links=' + distinctProfileLinks(header)
+            + ', avatars=' + avatarCount(header)
+            + ', imgs=' + header.querySelectorAll('img').length
             + ', groupClass=' + !!header.querySelector(GROUP_CLASSES);
+    };
+
+    // The failure variant: the same numbers with the name in front, because a chat that could not be
+    // identified is identified by nothing else.
+    var headerReport = function () {
+        var header = findHeader();
+        if (!header) return 'no header';
+
+        return 'name="' + headerName(header).substring(0, 40) + '", ' + headerFacts();
     };
 
     // Abandons the chat that could not be read and carries on with the next one. The index only
@@ -359,12 +402,17 @@
             lastIdentifiedKey = keyOf(entry);
             consecutiveMisses = 0;
             emptyScrolls = 0;
-            // The name alone is not enough to check against the inbox: the username is what the app
-            // looks the chat up by, and for a group it is the reason it was filed as one.
+            // The header's own numbers are printed for every chat, not only the ones that fail. What
+            // decides a person from a group is in there, so a log that shows only the decision cannot
+            // be argued with - and if a marker is wrong, these say which one to trust instead.
+            //
+            // The reason is printed whenever there is one, for a person as well as a group: a chat filed
+            // under its handle is unusual enough that the log should say so.
             log('Chat ' + scan.attempts + ': ' + (entry.isGroup
-                    ? 'group "' + entry.displayName + '" (' + entry.reason + ')'
+                    ? 'group "' + entry.displayName + '"'
                     : '@' + entry.username + ' "' + entry.displayName + '"')
-                + ' (' + scan.items.length + ' total)');
+                + (entry.reason ? ' (' + entry.reason + ')' : '')
+                + ' [' + headerFacts() + ']');
         } else if (outcome === 'duplicate') {
             // Reached again through a scroll overlap, which is expected and not a failure.
             log('Chat ' + scan.attempts + ': already seen');
@@ -416,18 +464,24 @@
     // after opening a single chat while still looking alive - which is what shipped from 2.1.14
     // through 2.1.18, and why the import never recorded a single chat.
 
-    // A group's header names the group and links to no single account, so the header's own link is
-    // what tells a person from a group - taken from the header alone. Deliberately not a search of
-    // the page: in a group the message pane links to the members who wrote, and picking one of those
-    // up is what gave a group a member's username and imported it as a friend.
+    // A group's header does link to an account - which is not what was expected, and is why groups
+    // still came through as friends. What gives a group away is the handle behind that link: TikTok
+    // builds it out of the group's name, so "Humas SMKN 1 TROWULAN" is filed under
+    // "humas.smkn.1.trow" and "FIVE MULTIPLE|SEASON 6" under "five.multiple". A person's handle is
+    // chosen by them and does not spell out their display name.
     //
-    // Two markers are used on top of that, and both are things only a group can show: several
-    // different profile links, which is a member stack, and a participant count such as "5 members".
-    // A class name mentioning group or member is reported by headerFacts but decides nothing, because
-    // nothing here has shown that a direct message's header is free of such a class - and a wrong
-    // "group" is far cheaper than a wrong "person". A group filed as a person is looked up by one
-    // member's username, so the app would open that member's chat instead of the group, while a
-    // person filed as a group is still found by name.
+    // That difference is the one marker here with evidence behind it: on the inbox this was found in,
+    // it held for both groups and for all twenty-two people. The other markers stay because they are
+    // things only a group can show - no link at all, several distinct links (a member stack), and a
+    // participant count such as "5 members".
+    //
+    // A class name mentioning group or member is reported by headerFacts but decides nothing, and so
+    // is the number of pictures in the header, which is the marker detect_groups.js used. Neither has
+    // been seen on a real header yet, and both can only be trusted once the log says so: a class like
+    // "member-avatar" on a direct message would turn every friend into a group at once. Where the
+    // markers disagree the answer is "group", because a group filed as a person is looked up by the
+    // handle that was read off it, so the app would open some member's chat instead of the group,
+    // while a person filed as a group is still found by name.
     var GROUP_CLASSES = '[class*="group"], [class*="Group"], [class*="member"], [class*="Member"]';
     var MEMBER_COUNT = /(\d+)\s*(members|member|anggota|peserta|participants|participant|orang)/i;
 
@@ -452,6 +506,25 @@
         return count;
     };
 
+    // How many different pictures the header shows, counted by source so the same one twice is still
+    // one. A direct message shows the person's, while a group shows a stack of its members - which is
+    // the marker detect_groups.js used. Reported only: nothing has shown yet what a direct message's
+    // header holds, and a badge or an icon counted here would turn friends into groups.
+    var avatarCount = function (header) {
+        var imgs = header.querySelectorAll('img');
+        var seenSrc = {};
+        var count = 0;
+
+        for (var i = 0; i < imgs.length; i++) {
+            var src = imgs[i].getAttribute('src') || imgs[i].getAttribute('data-src') || '';
+            if (!src || seenSrc[src]) continue;
+            seenSrc[src] = true;
+            count++;
+        }
+
+        return count;
+    };
+
     var usernameFrom = function (link) {
         if (!link) return '';
 
@@ -466,19 +539,92 @@
         }
     };
 
-    // Characters that carry no name: the header renders a bare "@" before the account loads, and some
-    // names are built from zero-width and placeholder characters, which would import as blank
-    // contacts.
-    var NAME_PADDING = /[\s\u200b-\u200f\u2060-\u2064\u3164\ufeff\ufffc@]/g;
+    // Characters that carry no name. The header renders a bare "@" before the account loads, and some
+    // accounts are named with runs of invisible filler - which would import as blank contacts.
+    //
+    // The filler TikTok uses is U+FFF4, and reading it as U+FFFC is what let a contact named with
+    // eleven invisible characters through: the two differ by one byte, and the log showed the name as
+    // nothing either way. The whole blank set is listed rather than the one that was noticed.
+    //
+    // Every comment in this file has to sit on a line of its own. The script is flattened onto one line
+    // before it is injected, so a comment trailing a statement would swallow the rest of the file -
+    // which is what the "no //" check in ScriptPreparationTests exists to catch.
+    var isBlankChar = function (ch) {
+        var code = ch.charCodeAt(0);
+
+        if (code <= 0x20) return true;
+        if (code === 0x40) return true;
+        if (code === 0x00a0 || code === 0x00ad) return true;
+        if (code >= 0x115f && code <= 0x1160) return true;
+        if (code >= 0x17b4 && code <= 0x17b5) return true;
+        if (code === 0x180e) return true;
+        if (code >= 0x2000 && code <= 0x200f) return true;
+        if (code >= 0x2028 && code <= 0x202f) return true;
+        if (code === 0x205f) return true;
+        if (code >= 0x2060 && code <= 0x2064) return true;
+        if (code === 0x2800) return true;
+        if (code === 0x3000) return true;
+        if (code === 0x3164) return true;
+        if (code === 0xfeff) return true;
+        if (code === 0xffa0) return true;
+        if (code >= 0xfff0 && code <= 0xfffd) return true;
+
+        return false;
+    };
 
     var isUsableName = function (name) {
-        return !!name && name.replace(NAME_PADDING, '').length > 0;
+        if (!name) return false;
+
+        for (var i = 0; i < name.length; i++) {
+            if (!isBlankChar(name.charAt(i))) return true;
+        }
+
+        return false;
     };
 
     // A handle has no space, no "@" and no slash in it. The sending flow rebuilds the chat's address
     // from this value, so anything else could never find the chat again.
     var isUsableUsername = function (username) {
         return !!username && !/[\s@\/]/.test(username);
+    };
+
+    // Whether the handle spells out the chat's name, which is what a group's handle is.
+    //
+    // TikTok builds it from the name: "FIVE MULTIPLE|SEASON 6" is filed under "five.multiple", and
+    // "Humas SMKN 1 TROWULAN" under "humas.smkn.1.trow" - cut off part-way through the last word, which
+    // is why the last word is allowed to match only at its start. A person's handle is chosen by them,
+    // so it does not spell out their display name.
+    //
+    // Two words are required, and a name with no space is left alone: a person's display name is very
+    // often their handle already - "kenpanzz" is a person whose handle is "kenpanzz" - while one word
+    // of a longer name is too little to go on, since "Ken Panzz" under the handle "ken" would
+    // otherwise read as a group.
+    var looksGeneratedFromName = function (name, username) {
+        if (!name || !username) return false;
+        if (name.indexOf(' ') === -1) return false;
+
+        var words = slugOf(name).split('.');
+        var parts = slugOf(username).split('.');
+        if (parts.length < 2 || parts.length > words.length) return false;
+
+        for (var i = 0; i < parts.length; i++) {
+            if (!parts[i]) return false;
+            if (words[i] === parts[i]) continue;
+
+            // The last one may be cut short, and only the last one: "humas.smkn.1.trow" is the start of
+            // "humas.smkn.1.trowulan", while a shortened word in the middle would have to be followed
+            // by a word that still matches.
+            if (i === parts.length - 1 && words[i].indexOf(parts[i]) === 0) continue;
+
+            return false;
+        }
+
+        return true;
+    };
+
+    // A name or handle reduced to lowercase words joined by dots, so the two can be compared.
+    var slugOf = function (value) {
+        return value.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '');
     };
 
     // The header's own text: the person's display name, or the group's chat name.
@@ -493,10 +639,11 @@
     };
 
     // Why this header looks like a group, or empty when it looks like a person.
-    var groupReason = function (header, linkCount) {
+    var groupReason = function (header, linkCount, name, username) {
         if (linkCount === 0) return 'no profile link';
         if (linkCount > 1) return 'member stack';
         if (MEMBER_COUNT.test(text(header))) return 'participant count';
+        if (looksGeneratedFromName(name, username)) return 'handle built from the name';
         return '';
     };
 
@@ -513,11 +660,13 @@
         // contact called "@".
         if (!isUsableName(name)) return null;
 
-        var reason = groupReason(header, distinctProfileLinks(header));
+        // The header's own link is read whatever the chat turns out to be, because for a group it is
+        // what gives the type away: the handle behind it is built from the group's name.
+        var username = usernameFrom(headerProfileLink(header));
+        var reason = groupReason(header, distinctProfileLinks(header), name, username);
         if (reason) return { username: '', displayName: name, isGroup: true, reason: reason };
 
-        // No group marker, so the header's own link has to name the person.
-        var username = usernameFrom(headerProfileLink(header));
+        // No group marker, so the header's link has to name the person.
         if (!isUsableUsername(username)) return null;
 
         return { username: username, displayName: name, isGroup: false, reason: '' };

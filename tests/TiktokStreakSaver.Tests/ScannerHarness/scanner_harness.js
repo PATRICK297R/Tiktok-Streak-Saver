@@ -38,14 +38,110 @@ const scenarios = [
             { name: 'Alice', links: ['/@alice'] },
             { name: 'Weekend Crew', links: [] },
             { name: 'FIVE MULTIPLE|SEASON 6', links: ['/@member1', '/@member2'] },
-            { name: 'Humas SMKN 1 TROWULAN', links: ['/@humas'], memberText: '5 members' }
+            { name: 'Humas SMKN 1 TROWULAN', links: ['/@humas'], memberText: '5 members' },
+            // A person whose display name is not their handle. The name has a space in it, so this is
+            // the shape a group's generated handle has - but the handle is nothing like the name, and
+            // reading it as a group is the false positive that would hurt.
+            { name: 'Rasya RaisKuker', links: ['/@virkun01'] }
         ],
         expected: [
             { displayName: 'Alice', isGroup: false, username: 'alice' },
             { displayName: 'Weekend Crew', isGroup: true },
             { displayName: 'FIVE MULTIPLE|SEASON 6', isGroup: true },
-            { displayName: 'Humas SMKN 1 TROWULAN', isGroup: true }
+            { displayName: 'Humas SMKN 1 TROWULAN', isGroup: true },
+            { displayName: 'Rasya RaisKuker', isGroup: false, username: 'virkun01' }
         ]
+    },
+    {
+        // Taken from the device log, where these two were imported as friends. Their headers each
+        // hold one profile link and nothing else to go on: no member stack, no participant count.
+        // What they share is the handle, which is the group's name spelled out - truncated, in the
+        // first case, exactly as TikTok truncates it.
+        title: 'the two groups from the device log, recognised by their generated handle',
+        chats: [
+            { name: 'Humas SMKN 1 TROWULAN', links: ['/@humas.smkn.1.trow'] },
+            { name: 'FIVE MULTIPLE|SEASON 6', links: ['/@five.multiple'] }
+        ],
+        expected: [
+            { displayName: 'Humas SMKN 1 TROWULAN', isGroup: true },
+            { displayName: 'FIVE MULTIPLE|SEASON 6', isGroup: true }
+        ]
+    },
+    {
+        // The whole inbox from the device log, exactly as it was reported: twenty-two people and two
+        // groups. Every handle here was read off a real header, which makes this the closest thing to
+        // a real run that can be had without a device - and the pair that started this is in it.
+        title: 'the whole inbox from the device log',
+        chats: [
+            { name: 'munchkie', links: ['/@vkyardians'] },
+            { name: 'kenpanzz', links: ['/@kenpanzz'] },
+            { name: 'jws\ud83e\udeb6', links: ['/@niank_889'] },
+            { name: 'Bref', links: ['/@bref2027'] },
+            { name: 'ikramnursofi', links: ['/@ikramnursofi2'] },
+            { name: 'Zyou', links: ['/@zyouredgrave'] },
+            { name: 'Zexor', links: ['/@zexora990'] },
+            { name: 'v', links: ['/@yyyanzz'] },
+            { name: 'Rasya RaisKuker', links: ['/@virkun01'] },
+            { name: 'aryaaaaa612', links: ['/@aryaaaaa612'] },
+            { name: 'padil pedil hy', links: ['/@fadhiel_mahen'] },
+            { name: 'Humas SMKN 1 TROWULAN', links: ['/@humas.smkn.1.trow'] },
+            { name: 'snowb\ud83c\udf35', links: ['/@suanz07'] },
+            { name: 'Zyou', links: ['/@huzyou'] },
+            { name: 'rap', links: ['/@rapreprapraprep'] },
+            { name: 'eL', links: ['/@vaparelmc'] },
+            { name: 'Koh_viiin', links: ['/@xzaldv'] },
+            { name: '\ufff4 \ufff4 \ufff4 \ufff4 \ufff4 \ufff4 \ufff4 \ufff4 \ufff4 \ufff4 \ufff4', links: ['/@xznsenpai'] },
+            { name: 'Bayu6852', links: ['/@bayu6852'] },
+            { name: 'trayyv', links: ['/@knethgr'] },
+            { name: 'Qizi~huono', links: ['/@qizicihuy8'] },
+            { name: 'FIVE MULTIPLE|SEASON 6', links: ['/@five.multiple'] },
+            { name: 'sniie', links: ['/@agnieputraa'] },
+            { name: 'Fadhil', links: ['/@lo.masfadhil'] }
+        ],
+        expected: [
+            { displayName: 'munchkie', isGroup: false, username: 'vkyardians' },
+            { displayName: 'kenpanzz', isGroup: false, username: 'kenpanzz' },
+            { displayName: 'jws\ud83e\udeb6', isGroup: false, username: 'niank_889' },
+            { displayName: 'Bref', isGroup: false, username: 'bref2027' },
+            { displayName: 'ikramnursofi', isGroup: false, username: 'ikramnursofi2' },
+            { displayName: 'Zyou', isGroup: false, username: 'zyouredgrave' },
+            { displayName: 'Zexor', isGroup: false, username: 'zexora990' },
+            { displayName: 'v', isGroup: false, username: 'yyyanzz' },
+            { displayName: 'Rasya RaisKuker', isGroup: false, username: 'virkun01' },
+            { displayName: 'aryaaaaa612', isGroup: false, username: 'aryaaaaa612' },
+            { displayName: 'padil pedil hy', isGroup: false, username: 'fadhiel_mahen' },
+            { displayName: 'Humas SMKN 1 TROWULAN', isGroup: true },
+            { displayName: 'snowb\ud83c\udf35', isGroup: false, username: 'suanz07' },
+            { displayName: 'Zyou', isGroup: false, username: 'huzyou' },
+            { displayName: 'rap', isGroup: false, username: 'rapreprapraprep' },
+            { displayName: 'eL', isGroup: false, username: 'vaparelmc' },
+            { displayName: 'Koh_viiin', isGroup: false, username: 'xzaldv' },
+            // Named with eleven invisible characters on the account itself. It was imported on a device
+            // under exactly those, which is what gave the filler character away - it is U+FFF4, and it
+            // was not on the list of blanks. Filed under the handle instead, which is what the app sends
+            // by anyway.
+            { displayName: 'xznsenpai', isGroup: false, username: 'xznsenpai' },
+            { displayName: 'Bayu6852', isGroup: false, username: 'bayu6852' },
+            { displayName: 'trayyv', isGroup: false, username: 'knethgr' },
+            { displayName: 'Qizi~huono', isGroup: false, username: 'qizicihuy8' },
+            { displayName: 'FIVE MULTIPLE|SEASON 6', isGroup: true },
+            { displayName: 'sniie', isGroup: false, username: 'agnieputraa' },
+            { displayName: 'Fadhil', isGroup: false, username: 'lo.masfadhil' }
+        ]
+    },
+    {
+        // What the device did with a name made of invisible filler. A person is kept under their
+        // handle, because that is what the app sends by; a group is left alone, because a group is
+        // matched by its name and there is no name to match.
+        title: 'a name of invisible filler',
+        chats: [
+            { name: '\ufff4 \ufff4 \ufff4 \ufff4 \ufff4 \ufff4', links: ['/@xznsenpai'] },
+            { name: '\ufff4 \ufff4 \ufff4 \ufff4 \ufff4 \ufff4', links: ['/@member1', '/@member2'] }
+        ],
+        expected: [
+            { displayName: 'xznsenpai', isGroup: false, username: 'xznsenpai' }
+        ],
+        expectedLog: ['named by its handle']
     },
     {
         title: 'a header still loading is waited for, not recorded as "@"',
@@ -60,9 +156,12 @@ const scenarios = [
         forbidden: ['"@"']
     },
     {
+        // Nothing to file it under: the name never fills in and the header links to no account, so the
+        // chat is given up on and the walk moves to the next one. This is the path that keeps a stuck
+        // chat from stalling the scan.
         title: 'a header that never loads is given up on and the walk carries on',
         chats: [
-            { name: 'Never Loads', links: ['/@ghost'], blankReads: 99 },
+            { name: 'Never Loads', links: [], blankReads: 99 },
             { name: 'Fadhil', links: ['/@Fadhil'] }
         ],
         expected: [
@@ -116,7 +215,9 @@ function buildSandbox(scenario) {
             const chat = chatOf(state.openIndex);
             if (!chat) return [];
 
-            if (selector === 'img') return new Array(chat.avatars || 1).fill({});
+            if (selector === 'img') return new Array(chat.avatars || 1).fill({}).map((_, i) => ({
+                getAttribute: (name) => (name === 'src' ? 'avatar' + i + '.jpg' : null)
+            }));
             if (selector.indexOf('/@') !== -1) return links(chat);
 
             return [];
@@ -226,6 +327,10 @@ function run(scenario) {
     });
 }
 
+// The key a chat is filed under, so that two chats sharing a display name are still told apart.
+const keyOf = (item) => (item.isGroup ? 'group:' + item.displayName : 'user:' + item.username);
+const wantKey = (want) => (want.isGroup ? 'group:' + want.displayName : 'user:' + want.username);
+
 function check(scenario, scan) {
     const lines = scan.log || [];
     const items = scan.items || [];
@@ -248,9 +353,9 @@ function check(scenario, scan) {
     }
 
     for (const want of scenario.expected) {
-        const found = items.filter((item) => item.displayName === want.displayName);
+        const found = items.filter((item) => keyOf(item) === wantKey(want));
         if (found.length !== 1) {
-            return 'expected one chat named "' + want.displayName + '", got ' + found.length;
+            return 'expected one chat filed under ' + wantKey(want) + ', got ' + found.length;
         }
 
         const item = found[0];
@@ -259,9 +364,9 @@ function check(scenario, scan) {
                 + ' but is ' + (want.isGroup ? 'a group' : 'a person');
         }
 
-        if (!want.isGroup && item.username !== want.username) {
-            return '"' + want.displayName + '" was read as @' + item.username
-                + ' but its username is ' + want.username;
+        if (item.displayName !== want.displayName) {
+            return 'the chat filed under ' + wantKey(want) + ' is named "' + item.displayName
+                + '" but should be "' + want.displayName + '"';
         }
     }
 
