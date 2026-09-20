@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 12+ (android:dataExtractionRules), which separates the two ways data leaves a device.
+
+    cloud-backup goes to the user's Google account, so the TikTok cookies in app_webview/ stay out
+    of it: credentials that grant full access to an account do not belong in a cloud copy.
+
+    device-transfer is a direct, encrypted copy between two devices the user owns, and it is not
+    stored anywhere in between. Allowing the session there is worth it - moving to a new phone keeps
+    the login - while cloud-backup still does not.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="sharedpref" path="." />
+        <include domain="file" path="." />
+        <include domain="database" path="." />
+
+        <exclude domain="root" path="app_webview" />
+        <exclude domain="root" path="databases" />
+
+        <exclude domain="root" path="cache" />
+        <exclude domain="root" path="code_cache" />
+        <exclude domain="file" path="cache" />
+    </cloud-backup>
+
+    <device-transfer>
+        <include domain="sharedpref" path="." />
+        <include domain="file" path="." />
+        <include domain="database" path="." />
+        <include domain="root" path="app_webview" />
+
+        <exclude domain="root" path="cache" />
+        <exclude domain="root" path="code_cache" />
+        <exclude domain="file" path="cache" />
+    </device-transfer>
+</data-extraction-rules>

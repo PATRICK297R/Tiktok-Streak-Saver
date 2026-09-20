@@ -40,6 +40,15 @@
 		<Compile Include="../../src/TiktokStreakSaver/Services/SendConfirmationSummary.cs" Link="Shared/Services/SendConfirmationSummary.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/RunRecency.cs" Link="Shared/Services/RunRecency.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/FriendOrder.cs" Link="Shared/Services/FriendOrder.cs" />
+		<!-- The backup codec goes through the source-generated context, exactly like the app does, so
+		     the tests cover the same serialisation path that ships. -->
+		<Compile Include="../../src/TiktokStreakSaver/Models/AppBackup.cs" Link="Shared/Models/AppBackup.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/AppJsonSerialization.cs" Link="Shared/Services/AppJsonSerialization.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/AppJsonContext.cs" Link="Shared/Services/AppJsonContext.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/AppBackupCodec.cs" Link="Shared/Services/AppBackupCodec.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/BackupMergePolicy.cs" Link="Shared/Services/BackupMergePolicy.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/BackupTimes.cs" Link="Shared/Services/BackupTimes.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/ContactScanReader.cs" Link="Shared/Services/ContactScanReader.cs" />
 	</ItemGroup>
 
 </Project>

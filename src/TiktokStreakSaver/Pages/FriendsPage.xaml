@@ -271,6 +271,15 @@
                                     </Grid>
                                 </VerticalStackLayout>
 
+                                <!--
+                                    Adding contacts faster than one at a time. Sits right under the
+                                    add panel because that is where the need for it shows up.
+                                -->
+                                <Button Text="Import from your TikTok chats"
+                                        Style="{StaticResource TextButton}"
+                                        HorizontalOptions="Start"
+                                        Clicked="OnImportFromChatsClicked"/>
+
                                 <VerticalStackLayout x:Name="FriendsListContainer" Spacing="8">
                                     <Label x:Name="NoFriendsLabel"
                                            Text="No friends added. Tap 'Add' to begin."

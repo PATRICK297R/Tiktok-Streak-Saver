@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 11 and below (android:fullBackupContent).
+
+    Without these rules everything under the app's data directory is eligible for cloud backup,
+    which includes the WebView cookie store in app_webview/. Those cookies are full access to the
+    TikTok account, so they are deliberately kept out of a backup that leaves the device. The
+    in-app backup file makes the same choice: it carries the friend list, messages and settings,
+    and asks for a fresh TikTok login instead of moving credentials around.
+-->
+<full-backup-content>
+    <!-- What the user would not want to rebuild by hand. -->
+    <include domain="sharedpref" path="." />
+    <include domain="file" path="." />
+    <include domain="database" path="." />
+
+    <!-- The TikTok session, on purpose. See the note above. -->
+    <exclude domain="root" path="app_webview" />
+    <exclude domain="root" path="databases" />
+
+    <!-- Rebuildable, and only makes the backup larger. -->
+    <exclude domain="root" path="cache" />
+    <exclude domain="root" path="code_cache" />
+    <exclude domain="file" path="cache" />
+</full-backup-content>

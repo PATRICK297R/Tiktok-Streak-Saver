@@ -361,6 +361,45 @@
                     </VerticalStackLayout>
                 </Border>
 
+                <!--
+                    Backup & Restore. Uninstalling deletes the app's private storage, so the only
+                    thing that reliably outlives a reinstall is a file the user owns - which also
+                    moves to a new phone, something no manifest setting can do.
+                -->
+                <Border Style="{StaticResource SectionCard}">
+                    <VerticalStackLayout Spacing="12">
+                        <VerticalStackLayout Spacing="2">
+                            <Label Text="Backup &amp; Restore" Style="{StaticResource SectionLabel}"/>
+                            <Label Text="Saves your friends, groups, custom messages, schedule and history into a file you keep. Restore it after reinstalling or on a new phone. The TikTok login is not included, so you sign in again afterwards."
+                                   Style="{StaticResource DataLabel}"
+                                   LineBreakMode="WordWrap"/>
+                        </VerticalStackLayout>
+
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                            <Button Text="Back up"
+                                    BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
+                                    TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
+                                    CornerRadius="14"
+                                    HeightRequest="44"
+                                    Clicked="OnBackupClicked"/>
+                            <Button Grid.Column="1"
+                                    Text="Restore"
+                                    BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray800}}"
+                                    TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
+                                    CornerRadius="14"
+                                    HeightRequest="44"
+                                    Clicked="OnRestoreClicked"/>
+                        </Grid>
+
+                        <!-- Result of the last backup or restore, so the outcome is never guessed at. -->
+                        <Label x:Name="BackupResultLabel"
+                               Text=""
+                               Style="{StaticResource DataLabel}"
+                               LineBreakMode="WordWrap"
+                               IsVisible="False"/>
+                    </VerticalStackLayout>
+                </Border>
+
                 <Border Style="{StaticResource SectionCard}">
                     <VerticalStackLayout Spacing="12">
                         <Label Text="Data" Style="{StaticResource SectionLabel}"/>

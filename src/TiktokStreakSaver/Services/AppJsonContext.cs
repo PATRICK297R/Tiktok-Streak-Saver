@@ -8,6 +8,10 @@ namespace TiktokStreakSaver.Services;
 [JsonSerializable(typeof(StreakRunResult))]
 [JsonSerializable(typeof(List<StreakRunResult>))]
 [JsonSerializable(typeof(FriendMessageResult))]
+[JsonSerializable(typeof(AppBackup))]
+[JsonSerializable(typeof(BackupSettings))]
+[JsonSerializable(typeof(ContactScanDto))]
+[JsonSerializable(typeof(ContactScanItemDto))]
 [JsonSourceGenerationOptions(
     PropertyNameCaseInsensitive = true,
     WriteIndented = true,

@@ -23,7 +23,7 @@
 			(.github/workflows/android-release.yml and ios-release.yml) override BOTH values
 			from the pushed git tag, so a tag release never depends on what is written here:
 
-			  tag v2.1.9     -> ApplicationDisplayVersion 2.1.9, ApplicationVersion 20109
+			  tag v2.1.10    -> ApplicationDisplayVersion 2.1.10, ApplicationVersion 20110
 			  tag ios-v0.1.5 -> ApplicationDisplayVersion 0.1.5, ApplicationVersion 105
 
 			Both workflows derive the build number from the tag as
@@ -34,8 +34,8 @@
 			reads this value, and ProfilePage/DashboardPage use it for the in-app update check,
 			so a stale default makes local builds report a version no release matches.
 		-->
-		<ApplicationDisplayVersion>2.1.9</ApplicationDisplayVersion>
-		<ApplicationVersion>20109</ApplicationVersion>
+		<ApplicationDisplayVersion>2.1.10</ApplicationDisplayVersion>
+		<ApplicationVersion>20110</ApplicationVersion>
 
 		<!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
 		<WindowsPackageType>None</WindowsPackageType>

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="TiktokStreakSaver.Pages.ImportContactsPage"
+             Title="Import from chats"
+             Shell.NavBarIsVisible="False"
+             Shell.TabBarIsVisible="False"
+             NavigationPage.HasNavigationBar="False"
+             BackgroundColor="{AppThemeBinding Light={StaticResource PageBackgroundLight}, Dark={StaticResource OffBlack}}">
+
+    <Grid RowDefinitions="Auto, *">
+
+        <VerticalStackLayout Grid.Row="0" Padding="20,16,20,12" Spacing="10">
+            <VerticalStackLayout Spacing="2">
+                <Label Text="Import from your chats"
+                       Style="{StaticResource PageTitleLabel}"
+                       HorizontalOptions="Start"/>
+                <Label Text="Reads the conversations in your TikTok inbox so you can add them all at once, instead of typing each one."
+                       FontFamily="InterRegular"
+                       FontSize="13"
+                       TextColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray400}}"
+                       LineBreakMode="WordWrap"
+                       HorizontalOptions="Start"/>
+            </VerticalStackLayout>
+
+            <Label x:Name="ScanStatusLabel"
+                   Text="Opening your inbox…"
+                   Style="{StaticResource DataLabel}"
+                   LineBreakMode="WordWrap"/>
+
+            <Button x:Name="CancelScanButton"
+                    Text="Cancel"
+                    Style="{StaticResource TextButton}"
+                    HorizontalOptions="Start"
+                    Clicked="OnCancelClicked"/>
+        </VerticalStackLayout>
+
+        <!--
+            The live TikTok inbox. It is shown rather than hidden on purpose: the scan is driven by
+            scrolling a real page, and seeing it makes a failure obvious - an empty list, a login
+            wall - instead of leaving a spinner that never explains itself.
+        -->
+        <WebView x:Name="ScanWebView"
+                 Grid.Row="1"
+                 Navigated="OnScanNavigated"/>
+
+        <ScrollView x:Name="ResultsPanel" Grid.Row="1" IsVisible="False">
+            <VerticalStackLayout Padding="20" Spacing="14"
+                                 BackgroundColor="{AppThemeBinding Light={StaticResource PageBackgroundLight}, Dark={StaticResource OffBlack}}">
+
+                <VerticalStackLayout Spacing="2">
+                    <Label x:Name="ResultsSummaryLabel"
+                           Text=""
+                           Style="{StaticResource ValueLabel}"/>
+                    <Label x:Name="ResultsDetailLabel"
+                           Text=""
+                           Style="{StaticResource DataLabel}"
+                           LineBreakMode="WordWrap"/>
+                </VerticalStackLayout>
+
+                <Border Style="{StaticResource SectionCard}">
+                    <VerticalStackLayout x:Name="ResultsList" Spacing="6"/>
+                </Border>
+
+                <Label Text="Names are read from the chat list, so a group name may need checking after it is added — the app matches groups by their chat header. You can rename any entry with Edit."
+                       Style="{StaticResource DataLabel}"
+                       LineBreakMode="WordWrap"/>
+
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                    <Button x:Name="AddContactsButton"
+                            Text="Add"
+                            BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
+                            TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
+                            CornerRadius="14"
+                            HeightRequest="44"
+                            Clicked="OnAddContactsClicked"/>
+                    <Button Grid.Column="1"
+                            Text="Discard"
+                            BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray800}}"
+                            TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
+                            CornerRadius="14"
+                            HeightRequest="44"
+                            Clicked="OnCancelClicked"/>
+                </Grid>
+            </VerticalStackLayout>
+        </ScrollView>
+
+    </Grid>
+</ContentPage>

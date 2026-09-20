@@ -8,6 +8,7 @@ public partial class ProfilePage : ContentPage
 {
     private readonly SessionService _sessionService;
     private readonly SettingsService _settingsService;
+    private readonly BackupService _backupService;
     private bool _suppressIntervalChanged = false;
     private bool _suppressRandomizeToggle = false;
     private bool _suppressScheduleTimeChanged = false;
@@ -22,6 +23,7 @@ public partial class ProfilePage : ContentPage
         InitializeComponent();
         _sessionService = new SessionService();
         _settingsService = new SettingsService();
+        _backupService = new BackupService(_settingsService, _sessionService);
 #if ANDROID
         _updateService = new UpdateService();
 #endif
@@ -52,6 +54,20 @@ public partial class ProfilePage : ContentPage
             this.FadeTo(1, 280, Easing.SinInOut),
             this.TranslateTo(0, 0, 280, Easing.SinInOut));
 
+        LoadSettingsFromStorage();
+
+        await UpdateLoginButtonStateAsync();
+    }
+
+    /// <summary>
+    /// Reads every stored setting back into the controls.
+    /// <para>
+    /// Extracted from <see cref="OnAppearing"/> so a restore can repaint the page with the values it
+    /// just wrote, instead of leaving the pre-restore toggles and times on screen.
+    /// </para>
+    /// </summary>
+    private void LoadSettingsFromStorage()
+    {
         LoadProfilePhoto();
 
         DisplayNameEntry.Text = _sessionService.GetDisplayName();
@@ -128,8 +144,6 @@ public partial class ProfilePage : ContentPage
         IosShortcutsSettingsPanel.IsVisible = false;
         AndroidSchedulingPanel.IsVisible = true;
 #endif
-
-        await UpdateLoginButtonStateAsync();
     }
 
     protected override void OnDisappearing()
@@ -596,5 +610,138 @@ public partial class ProfilePage : ContentPage
             _sessionService.ClearSession();
             UpdateLoginButtonState(false);
         }
+    }
+
+    // ─── Backup & Restore ────────────────────────────────────────────────────
+
+    private async void OnBackupClicked(object? sender, EventArgs e)
+    {
+        try
+        {
+            var backup = _backupService.Create();
+            var json = AppBackupCodec.Serialize(backup);
+
+            var filePath = System.IO.Path.Combine(FileSystem.CacheDirectory, BackupService.SuggestedFileName(DateTime.Now));
+            await System.IO.File.WriteAllTextAsync(filePath, json);
+
+            ShowBackupResult($"Backed up {backup.Friends.Count} entries plus your settings and history. Save the file somewhere you can find it again — it is the only copy.",
+                isError: false);
+
+            await Share.Default.RequestAsync(new ShareFileRequest
+            {
+                Title = "Streak Saver backup",
+                File = new ShareFile(filePath, "application/json")
+            });
+        }
+        catch (Exception ex)
+        {
+            ShowBackupResult($"Could not create the backup: {ex.Message}", isError: true);
+        }
+    }
+
+    private async void OnRestoreClicked(object? sender, EventArgs e)
+    {
+        try
+        {
+            var picked = await FilePicker.Default.PickAsync(new PickOptions
+            {
+                PickerTitle = "Select a Streak Saver backup",
+                FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
+                {
+                    { DevicePlatform.Android, new[] { "application/json", "*/*" } },
+                    { DevicePlatform.iOS, new[] { "public.json" } },
+                    { DevicePlatform.WinUI, new[] { ".json" } },
+                    { DevicePlatform.macOS, new[] { "json" } },
+                })
+            });
+            if (picked == null) return;
+
+            string json;
+            using (var stream = await picked.OpenReadAsync())
+            using (var reader = new System.IO.StreamReader(stream))
+                json = await reader.ReadToEndAsync();
+
+            // Refused rather than half-applied when the file is unreadable or from a newer build.
+            if (!AppBackupCodec.TryDeserialize(json, out var backup, out var codecError) || backup is null)
+            {
+                var message = codecError ?? "The file could not be read.";
+                ShowBackupResult(message, isError: true);
+                await DisplayAlert("Restore Failed", message, "OK");
+                return;
+            }
+
+            var summary = AppBackupCodec.Summarize(backup);
+            var contents = $"{summary.Friends} friends, {summary.Groups} groups, {summary.RunHistoryCount} past runs.\n"
+                         + $"Written {summary.ExportedAtText}"
+                         + (string.IsNullOrWhiteSpace(summary.AppVersion) ? "." : $" by app {summary.AppVersion}.");
+
+            var choice = await DisplayActionSheet(
+                $"This backup holds:\n{contents}\n\nHow should it be applied?",
+                "Cancel",
+                null,
+                "Merge — keep what is on this device",
+                "Replace — use only the backup");
+
+            if (string.IsNullOrEmpty(choice) || choice == "Cancel")
+                return;
+
+            await ApplyRestoreAsync(backup, replace: choice.StartsWith("Replace", StringComparison.Ordinal));
+        }
+        catch (Exception ex)
+        {
+            ShowBackupResult($"Could not restore: {ex.Message}", isError: true);
+        }
+    }
+
+    /// <summary>
+    /// Applies a parsed backup and reports what it changed, in counts rather than a bare "done".
+    /// </summary>
+    private async Task ApplyRestoreAsync(TiktokStreakSaver.Models.AppBackup backup, bool replace)
+    {
+        if (replace)
+        {
+            var confirmed = await DisplayAlert(
+                "Replace everything?",
+                "Your current friends, groups and messages will be removed and replaced by the backup. This cannot be undone.",
+                "Replace",
+                "Cancel");
+            if (!confirmed)
+                return;
+        }
+
+        if (!_backupService.TryApply(backup, replace, out var applied, out var applyError))
+        {
+            var message = applyError ?? "The restore did not complete.";
+            ShowBackupResult(message, isError: true);
+            await DisplayAlert("Restore Failed", message, "OK");
+            return;
+        }
+
+        var detail = replace
+            ? $"Replaced your list with {applied.FriendsTotal} entries."
+            : $"Added {applied.FriendsAdded} new entries; {applied.FriendsSkipped} were already here. "
+              + $"The list now holds {applied.FriendsTotal}.";
+
+        detail += applied.HistoryRestored
+            ? " Past runs were restored."
+            : " Your existing run history was kept.";
+
+        // The restored values are on screen now, not the ones from before the restore.
+        LoadSettingsFromStorage();
+        UpdateLoginButtonState(_sessionService.IsSessionValid());
+
+        ShowBackupResult(detail, isError: false);
+        await DisplayAlert("Restore Complete",
+            detail + "\n\nA backup never contains your TikTok login, so sign in again if the app asks.",
+            "OK");
+    }
+
+    private void ShowBackupResult(string message, bool isError)
+    {
+        BackupResultLabel.Text = message;
+        BackupResultLabel.IsVisible = true;
+        BackupResultLabel.SetAppThemeColor(Label.TextColorProperty,
+            isError ? GetThemeColor("DeleteColor", "#EE1D52") : GetThemeColor("Gray600", "#5F636A"),
+            isError ? Color.FromArgb("#F87171") : GetThemeColor("Gray400", "#8B8F96"));
     }
 }

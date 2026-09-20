@@ -607,6 +607,15 @@ public partial class FriendsPage : ContentPage
 
     // ─── Import / Export (friend list — both groups & friends are persisted together) ──
 
+    /// <summary>
+    /// Opens the scanner that reads the TikTok inbox, so a long contact list does not have to be
+    /// typed in one entry at a time.
+    /// </summary>
+    private async void OnImportFromChatsClicked(object? sender, EventArgs e)
+    {
+        await Navigation.PushAsync(new ImportContactsPage());
+    }
+
     private async void OnImportFriendsClicked(object? sender, EventArgs e)
     {
         try
