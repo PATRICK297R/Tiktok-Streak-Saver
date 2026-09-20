@@ -13,6 +13,9 @@ public partial class FriendsPage : ContentPage
     private IDispatcherTimer? _statusTimer;
     private bool _isGroupMode = false;
 
+    /// <summary>Whether the "Send order" card is showing its list. Kept across refreshes.</summary>
+    private bool _sendOrderExpanded = false;
+
     public FriendsPage()
     {
         InitializeComponent();
@@ -91,6 +94,10 @@ public partial class FriendsPage : ContentPage
 
             if (AddFriendPanel.IsVisible && isRunning) AddFriendPanel.IsVisible = false;
             if (AddGroupPanel.IsVisible && isRunning) AddGroupPanel.IsVisible = false;
+
+            // Reordering mid-run could not affect the run already in flight, so it is not offered.
+            SendOrderToggleButton.IsEnabled = !isRunning;
+            SendOrderToggleButton.Opacity = isRunning ? 0.6 : 1.0;
         }
     }
 
@@ -164,6 +171,143 @@ public partial class FriendsPage : ContentPage
         foreach (var group in groupsToShow) GroupsListContainer.Children.Add(CreateEntryView(group));
 
         UpdateStatsCard(allItems);
+        RefreshSendOrder(allItems);
+    }
+
+    // ─── Send order ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Shows the exact order entries will be messaged in.
+    /// <para>
+    /// The Friends and Groups sections below split one saved list into two, so neither can show this:
+    /// a group saved before a friend is messaged first while being displayed underneath. This list is
+    /// the queue itself, so what the user sees is what the runner will do.
+    /// </para>
+    /// </summary>
+    private void RefreshSendOrder(List<FriendConfig>? all = null)
+    {
+        var queue = FriendOrder.SendQueue(all ?? _settingsService.GetFriendsList());
+
+        // One entry needs no ordering, and nothing at all has nothing to show.
+        SendOrderCard.IsVisible = queue.Count >= 2;
+        SendOrderSubtitleLabel.Text = $"{queue.Count} entries, messaged top to bottom";
+
+        SendOrderToggleButton.Text = _sendOrderExpanded ? "Done" : "Reorder";
+        SendOrderListContainer.IsVisible = _sendOrderExpanded;
+        SendOrderHintLabel.IsVisible = _sendOrderExpanded;
+
+        var rowsToRemove = SendOrderListContainer.Children.ToList();
+        foreach (var row in rowsToRemove) SendOrderListContainer.Children.Remove(row);
+
+        if (!_sendOrderExpanded)
+            return;
+
+        for (var i = 0; i < queue.Count; i++)
+            SendOrderListContainer.Children.Add(CreateSendOrderRow(queue[i], i, queue.Count));
+    }
+
+    private void OnToggleSendOrderClicked(object? sender, EventArgs e)
+    {
+        _sendOrderExpanded = !_sendOrderExpanded;
+        RefreshSendOrder();
+    }
+
+    private View CreateSendOrderRow(FriendConfig friend, int index, int total)
+    {
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitionCollection
+            {
+                new ColumnDefinition { Width = new GridLength(26) },
+                new ColumnDefinition { Width = GridLength.Star },
+                new ColumnDefinition { Width = GridLength.Auto },
+                new ColumnDefinition { Width = GridLength.Auto }
+            },
+            ColumnSpacing = 6
+        };
+
+        var position = new Label
+        {
+            Text = (index + 1).ToString(),
+            FontFamily = "InterSemiBold",
+            FontSize = 14,
+            HorizontalTextAlignment = TextAlignment.Center,
+            VerticalTextAlignment = TextAlignment.Center,
+            VerticalOptions = LayoutOptions.Center
+        };
+        position.SetAppThemeColor(Label.TextColorProperty,
+            GetThemeColor("Primary", "#FE2C55"), GetThemeColor("Primary", "#FE2C55"));
+        grid.Children.Add(position);
+
+        var displayName = string.IsNullOrEmpty(friend.DisplayName) ? friend.Username : friend.DisplayName;
+        var infoStack = new VerticalStackLayout { Spacing = 2, VerticalOptions = LayoutOptions.Center };
+        infoStack.Children.Add(new Label { Text = displayName, FontSize = 14, FontFamily = "InterMedium" });
+        infoStack.Children.Add(new Label
+        {
+            Text = friend.IsGroup ? "Group" : $"@{friend.Username}",
+            FontSize = 12,
+            TextColor = GetThemeColor("Gray400", "#8B8F96")
+        });
+        Grid.SetColumn(infoStack, 1);
+        grid.Children.Add(infoStack);
+
+        grid.Children.Add(CreateSendOrderMoveButton(friend, up: true, canMove: index > 0, column: 2));
+        grid.Children.Add(CreateSendOrderMoveButton(friend, up: false, canMove: index < total - 1, column: 3));
+
+        var row = new Border
+        {
+            StrokeThickness = 0,
+            StrokeShape = new RoundRectangle { CornerRadius = 12 },
+            Padding = new Thickness(10, 6)
+        };
+        row.SetAppThemeColor(Border.BackgroundColorProperty,
+            GetThemeColor("Gray100", "#F3F4F6"), GetThemeColor("Gray900", "#111827"));
+        row.Content = grid;
+        return row;
+    }
+
+    private Button CreateSendOrderMoveButton(FriendConfig friend, bool up, bool canMove, int column)
+    {
+        var button = new Button
+        {
+            Text = up ? "↑" : "↓",
+            BackgroundColor = Colors.Transparent,
+            FontSize = 18,
+            Padding = new Thickness(10, 0),
+            HeightRequest = 40,
+            WidthRequest = 44,
+            VerticalOptions = LayoutOptions.Center,
+            IsEnabled = canMove && !_lastIsRunning
+        };
+        button.SetAppThemeColor(Button.TextColorProperty,
+            GetThemeColor("Primary", "#FE2C55"), GetThemeColor("Primary", "#FE2C55"));
+
+        // The entry at either end has nowhere to go, so its arrow is dimmed rather than silently
+        // doing nothing.
+        button.Opacity = button.IsEnabled ? 1.0 : 0.35;
+
+        button.Clicked += (s, e) => MoveSendOrderEntry(friend.Id, up);
+        Grid.SetColumn(button, column);
+        return button;
+    }
+
+    /// <summary>
+    /// Applies one move and saves it. The save result is checked rather than discarded, because a
+    /// silent write failure would look exactly like the arrows not working.
+    /// </summary>
+    private void MoveSendOrderEntry(string friendId, bool up)
+    {
+        var all = _settingsService.GetFriendsList();
+        var moved = up ? FriendOrder.TryMoveUp(all, friendId) : FriendOrder.TryMoveDown(all, friendId);
+
+        if (!moved)
+            return;
+
+        if (!_settingsService.TrySaveFriendsList(all, out var error))
+            _ = DisplayAlert("Could not save order", error ?? "The new order was not saved.", "OK");
+
+        // Re-reads the saved list either way, so the page shows what was actually stored.
+        LoadLists();
     }
 
     private void UpdateStatsCard(List<FriendConfig> allItems)
@@ -173,6 +317,20 @@ public partial class FriendsPage : ContentPage
         EnabledFriendsLabel.Text = allItems.Count(f => f.IsEnabled).ToString();
         var today = DateTime.Now.Date;
         SentTodayLabel.Text = allItems.Count(f => f.LastMessageSent.HasValue && f.LastMessageSent.Value.Date == today).ToString();
+    }
+
+    /// <summary>
+    /// Shortens a custom message for the friend row. The full text stays untouched in storage; this is
+    /// only so a long message cannot stretch the row.
+    /// </summary>
+    private static string TruncateForRow(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return string.Empty;
+
+        var flat = message.Replace('\n', ' ').Replace('\r', ' ').Trim();
+
+        return flat.Length <= 40 ? flat : flat.Substring(0, 40) + "…";
     }
 
     private View CreateEntryView(FriendConfig friend)
@@ -198,6 +356,7 @@ public partial class FriendsPage : ContentPage
                 new ColumnDefinition { Width = GridLength.Star },
                 new ColumnDefinition { Width = GridLength.Auto },
                 new ColumnDefinition { Width = GridLength.Auto },
+                new ColumnDefinition { Width = GridLength.Auto },
                 new ColumnDefinition { Width = GridLength.Auto }
             },
             ColumnSpacing = 8
@@ -210,7 +369,44 @@ public partial class FriendsPage : ContentPage
         infoStack.Children.Add(new Label { Text = subtitleText, FontSize = 13, TextColor = GetThemeColor("Gray400", "#8B8F96") });
         if (friend.LastMessageSent.HasValue)
             infoStack.Children.Add(new Label { Text = $"Last sent: {friend.LastMessageSent.Value:MMM dd}", FontSize = 12, TextColor = GetThemeColor("Gray400", "#8B8F96") });
+
+        // Shows at a glance that this entry sends something different, so a custom message is never
+        // set by accident and forgotten.
+        if (friend.HasCustomMessage)
+        {
+            var customLabel = new Label
+            {
+                Text = $"Own message: {TruncateForRow(friend.CustomMessage)}",
+                FontSize = 12,
+                LineBreakMode = LineBreakMode.TailTruncation,
+                MaxLines = 1,
+            };
+            customLabel.SetAppThemeColor(Label.TextColorProperty,
+                Color.FromArgb("#B45309"), Color.FromArgb("#F59E0B"));
+            infoStack.Children.Add(customLabel);
+        }
+
         grid.Children.Add(infoStack);
+
+        var messageButton = new Button { Text = "Message", BackgroundColor = Colors.Transparent, FontSize = 12, Padding = new Thickness(8), HeightRequest = 44, VerticalOptions = LayoutOptions.Center, IsEnabled = !_lastIsRunning, Opacity = _lastIsRunning ? 0.6 : 1.0 };
+        messageButton.SetAppThemeColor(Button.TextColorProperty, GetThemeColor("Gray400"), GetThemeColor("Gray400"));
+        messageButton.Clicked += async (s, e) =>
+        {
+            var noun = friend.IsGroup ? "group" : $"@{friend.Username}";
+            var promptTitle = friend.IsGroup ? "Group Message" : "Friend Message";
+            var promptMessage = $"Message to send to {noun}.\n\nLeave blank to use the shared message from the Dashboard. "
+                              + "You can still use {name} and {username} here.";
+
+            var entered = await DisplayPromptAsync(promptTitle, promptMessage, initialValue: friend.CustomMessage ?? string.Empty);
+
+            // null means the prompt was cancelled, which must not wipe an existing message.
+            if (entered == null) return;
+
+            friend.CustomMessage = MessageResolver.Normalize(entered);
+            _settingsService.UpdateFriend(friend);
+            LoadLists();
+        };
+        Grid.SetColumn(messageButton, 1); grid.Children.Add(messageButton);
 
         var editButton = new Button { Text = "Edit", BackgroundColor = Colors.Transparent, FontSize = 12, Padding = new Thickness(8), HeightRequest = 44, VerticalOptions = LayoutOptions.Center, IsEnabled = !_lastIsRunning, Opacity = _lastIsRunning ? 0.6 : 1.0 };
         editButton.SetAppThemeColor(Button.TextColorProperty, GetThemeColor("Gray400"), GetThemeColor("Gray400"));
@@ -223,7 +419,7 @@ public partial class FriendsPage : ContentPage
             var newName = await DisplayPromptAsync(promptTitle, promptMessage, initialValue: friend.DisplayName ?? friend.Username);
             if (newName != null) { friend.DisplayName = newName; _settingsService.UpdateFriend(friend); LoadLists(); }
         };
-        Grid.SetColumn(editButton, 1); grid.Children.Add(editButton);
+        Grid.SetColumn(editButton, 2); grid.Children.Add(editButton);
 
         var deleteButton = new Button { Text = "Delete", BackgroundColor = Colors.Transparent, FontSize = 12, Padding = new Thickness(8), HeightRequest = 44, VerticalOptions = LayoutOptions.Center, IsEnabled = !_lastIsRunning, Opacity = _lastIsRunning ? 0.6 : 1.0 };
         deleteButton.TextColor = GetThemeColor("DeleteColor", "#EE1D52");
@@ -233,13 +429,20 @@ public partial class FriendsPage : ContentPage
             var confirm = await DisplayAlert($"Remove {noun}", $"Remove {displayName} from the list?", "Remove", "Cancel");
             if (confirm) { _settingsService.RemoveFriend(friend.Id); LoadLists(); }
         };
-        Grid.SetColumn(deleteButton, 2); grid.Children.Add(deleteButton);
+        Grid.SetColumn(deleteButton, 3); grid.Children.Add(deleteButton);
 
         var toggleSwitch = new Switch { IsToggled = friend.IsEnabled, VerticalOptions = LayoutOptions.Center, IsEnabled = !_lastIsRunning, Opacity = _lastIsRunning ? 0.6 : 1.0 };
         toggleSwitch.SetAppThemeColor(Switch.ThumbColorProperty, GetThemeColor("White"), GetThemeColor("White"));
         toggleSwitch.SetAppThemeColor(Switch.OnColorProperty, GetThemeColor("Primary", "#FE2C55"), GetThemeColor("Primary", "#FE2C55"));
-        toggleSwitch.Toggled += (s, e) => { friend.IsEnabled = e.Value; _settingsService.UpdateFriend(friend); };
-        Grid.SetColumn(toggleSwitch, 3); grid.Children.Add(toggleSwitch);
+        toggleSwitch.Toggled += (s, e) =>
+        {
+            friend.IsEnabled = e.Value;
+            _settingsService.UpdateFriend(friend);
+
+            // Disabling an entry takes it out of the queue, so the send order has to be redrawn.
+            RefreshSendOrder();
+        };
+        Grid.SetColumn(toggleSwitch, 4); grid.Children.Add(toggleSwitch);
 
         border.Content = grid;
         return border;
@@ -284,6 +487,7 @@ public partial class FriendsPage : ContentPage
         AddFriendPanel.IsVisible = true;
         NewFriendUsernameEntry.Text = string.Empty;
         NewFriendDisplayNameEntry.Text = string.Empty;
+        NewFriendMessageEditor.Text = string.Empty;
         NewFriendUsernameEntry.Focus();
     }
 
@@ -297,7 +501,14 @@ public partial class FriendsPage : ContentPage
         var existing = _settingsService.GetFriendsList();
         if (existing.Any(f => !f.IsGroup && f.Username.Equals(username, StringComparison.OrdinalIgnoreCase)))
         { await DisplayAlert("Error", "This friend is already in your list", "OK"); return; }
-        var friend = new FriendConfig { Username = username, DisplayName = displayName ?? string.Empty, IsEnabled = true, IsGroup = false };
+        var friend = new FriendConfig
+        {
+            Username = username,
+            DisplayName = displayName ?? string.Empty,
+            IsEnabled = true,
+            IsGroup = false,
+            CustomMessage = MessageResolver.Normalize(NewFriendMessageEditor.Text)
+        };
         if (!_settingsService.TryAddFriend(friend, out var error))
         {
             await DisplayAlert("Could Not Save", error ?? "Friend could not be saved on this device.", "OK");
@@ -343,6 +554,7 @@ public partial class FriendsPage : ContentPage
         AddGroupPanel.IsVisible = true;
         NewGroupNameEntry.Text = string.Empty;
         NewGroupDisplayNameEntry.Text = string.Empty;
+        NewGroupMessageEditor.Text = string.Empty;
         NewGroupNameEntry.Focus();
     }
 
@@ -364,7 +576,8 @@ public partial class FriendsPage : ContentPage
             Username = string.Empty,
             DisplayName = string.IsNullOrEmpty(displayName) ? matchName : matchName,
             IsGroup = true,
-            IsEnabled = true
+            IsEnabled = true,
+            CustomMessage = MessageResolver.Normalize(NewGroupMessageEditor.Text)
         };
         if (!_settingsService.TryAddFriend(group, out var error))
         {

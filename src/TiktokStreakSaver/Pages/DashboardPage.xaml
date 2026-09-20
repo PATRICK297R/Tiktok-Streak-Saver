@@ -111,7 +111,7 @@
                                    IsVisible="False"/>
                             <VerticalStackLayout x:Name="CustomMessagePanel" Spacing="4">
                                 <Label x:Name="MessageEditorHint"
-                                       Text="Message sent to each friend during a streak run"
+                                       Text="Message sent to each friend during a streak run. Use {name} for their display name and {username} for their handle."
                                        Style="{StaticResource DataLabel}"
                                        LineBreakMode="WordWrap"/>
                                 <Border x:Name="MessageEditorBorder" StrokeThickness="0"

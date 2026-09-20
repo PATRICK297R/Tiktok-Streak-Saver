@@ -12,11 +12,23 @@ const base = `${import.meta.env.BASE_URL}imgs/`
 export const screenshots: Screenshot[] = [
   { src: base + 'Welcome.jpeg', alt: 'Welcome / login screen', caption: 'One-tap TikTok login' },
   { src: base + 'Main_Secondary.jpeg', alt: 'Dashboard', caption: 'Daily progress at a glance' },
-  { src: base + 'Burst_Main.jpeg', alt: 'Run in progress', caption: 'Run streaks in seconds' },
-  { src: base + 'Burst_Secondary.jpeg', alt: 'Per-friend feedback', caption: 'Live per-friend status' },
   { src: base + 'Settings.jpeg', alt: 'Settings', caption: 'Schedule, retries, battery toggle' },
   { src: base + 'Update_Screen.jpeg', alt: 'Update screen', caption: 'In-app update checks' }
 ]
+
+/**
+ * NOTE ON STALENESS — these images predate the multi-page UI rewrite (2026-05-11).
+ *
+ * Two entries were removed because they advertised a feature that no longer exists: burst mode was
+ * deliberately dropped when the multi-page UI was ported in, yet the site kept showing
+ * `Burst_Main.jpeg` / `Burst_Secondary.jpeg` with captions about "run streaks in seconds". Anyone
+ * installing the app and looking for burst mode would have found nothing.
+ *
+ * The four remaining images are still from the old single-page layout, so they are out of date rather
+ * than wrong: the features they show all still exist, but the navigation around them changed to
+ * Dashboard / Friends / History / Profile. They need re-capturing from a real device — see
+ * `docs/screenshot-checklist.md` for exactly which screens are missing.
+ */
 
 export interface HowStep {
   number: number
@@ -52,7 +64,8 @@ export const howItWorks: HowStep[] = [
     number: 4,
     title: 'Streaks send themselves',
     description: 'A foreground service quietly opens TikTok and sends each message. You just check the notification.',
-    image: base + 'Burst_Main.jpeg',
-    alt: 'Streak run notification and progress'
+    // Was Burst_Main.jpeg, which showed the since-removed burst mode.
+    image: base + 'Main_Secondary.jpeg',
+    alt: 'Dashboard after an automated run'
   }
 ]

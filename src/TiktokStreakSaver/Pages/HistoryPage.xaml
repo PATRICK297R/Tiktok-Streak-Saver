@@ -37,7 +37,7 @@
                             <Label x:Name="TotalRunsLabel"
                                    Text=""
                                    Style="{StaticResource DataLabel}"/>
-                            <Label x:Name="AvgDurationLabel"
+                            <Label x:Name="LastRunSummaryLabel"
                                    Text=""
                                    Style="{StaticResource DataLabel}"/>
                         </VerticalStackLayout>

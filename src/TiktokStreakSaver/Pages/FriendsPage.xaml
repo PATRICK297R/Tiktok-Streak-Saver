@@ -102,6 +102,40 @@
                         </Grid>
                     </Border>
 
+                    <!-- Send order. The runner messages entries in the order they sit in the saved
+                         list, but the Friends and Groups sections below split that one list in two -
+                         so a group saved before a friend is messaged first while being displayed
+                         underneath. This card shows the real sequence. -->
+                    <Border x:Name="SendOrderCard"
+                            Style="{StaticResource SectionCard}"
+                            IsVisible="False">
+                        <VerticalStackLayout Spacing="12">
+                            <Grid ColumnDefinitions="*, Auto" ColumnSpacing="8">
+                                <VerticalStackLayout Spacing="2" VerticalOptions="Center">
+                                    <Label Text="Send order"
+                                           Style="{StaticResource SectionLabel}"/>
+                                    <Label x:Name="SendOrderSubtitleLabel"
+                                           Text=""
+                                           Style="{StaticResource DataLabel}"/>
+                                </VerticalStackLayout>
+                                <Button x:Name="SendOrderToggleButton"
+                                        Grid.Column="1"
+                                        Text="Reorder"
+                                        Style="{StaticResource TextButton}"
+                                        VerticalOptions="Center"
+                                        Clicked="OnToggleSendOrderClicked"/>
+                            </Grid>
+
+                            <VerticalStackLayout x:Name="SendOrderListContainer" Spacing="6" IsVisible="False"/>
+
+                            <Label x:Name="SendOrderHintLabel"
+                                   Text="Use the arrows to move an entry up or down. The entry at the top is messaged first; disabled entries are skipped."
+                                   Style="{StaticResource DataLabel}"
+                                   LineBreakMode="WordWrap"
+                                   IsVisible="False"/>
+                        </VerticalStackLayout>
+                    </Border>
+
                     <!-- Mode Switcher (Friends / Groups) -->
                     <Border Stroke="{AppThemeBinding Light={StaticResource BorderColorLight}, Dark={StaticResource BorderColorDark}}"
                             StrokeThickness="1"
@@ -212,6 +246,15 @@
                                                Margin="12,4"
                                                BackgroundColor="Transparent"/>
                                     </Border>
+                                    <Border StrokeThickness="0"
+                                            StrokeShape="RoundRectangle 16"
+                                            BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}">
+                                        <Editor x:Name="NewFriendMessageEditor"
+                                                Placeholder="Own message for this friend (optional — blank uses the shared message)"
+                                                HeightRequest="72"
+                                                Margin="12,8"
+                                                BackgroundColor="Transparent"/>
+                                    </Border>
                                     <Grid ColumnDefinitions="*, *" ColumnSpacing="8">
                                         <Button Text="Cancel"
                                                 Style="{StaticResource TextButton}"
@@ -301,6 +344,15 @@
                                                Placeholder="Display name (optional)"
                                                Margin="12,4"
                                                BackgroundColor="Transparent"/>
+                                    </Border>
+                                    <Border StrokeThickness="0"
+                                            StrokeShape="RoundRectangle 16"
+                                            BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}">
+                                        <Editor x:Name="NewGroupMessageEditor"
+                                                Placeholder="Own message for this group (optional — blank uses the shared message)"
+                                                HeightRequest="72"
+                                                Margin="12,8"
+                                                BackgroundColor="Transparent"/>
                                     </Border>
                                     <Grid ColumnDefinitions="*, *" ColumnSpacing="8">
                                         <Button Text="Cancel"

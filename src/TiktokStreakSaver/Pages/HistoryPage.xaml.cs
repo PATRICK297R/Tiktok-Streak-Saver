@@ -67,33 +67,28 @@ public partial class HistoryPage : ContentPage
             SuccessRateLabel.Text = totalMessages > 0
                 ? $"{successMessages} of {totalMessages} messages successful"
                 : $"{history.Count(r => r.Success)} of {history.Count} runs successful";
-            TotalRunsLabel.Text = $"Last {Math.Min(history.Count, 50)} runs tracked";
+            int tracked = Math.Min(history.Count, SettingsService.MaxRunHistoryEntries);
+            var week = RunHistoryStats.ForLastDays(history, 7, DateTime.Today);
+            TotalRunsLabel.Text = week.HasData
+                ? $"Last {tracked} runs tracked | 7-day: {week.SuccessPercent}% success"
+                : $"Last {tracked} runs tracked";
 
-            var lastRun = history.FirstOrDefault();
-            if (lastRun != null && lastRun.Duration.HasValue)
-            {
-                var dur = lastRun.Duration.Value;
-                if (dur.TotalSeconds < 1)
-                {
-                    AvgDurationLabel.Text = "Last run: < 1s";
-                }
-                else
-                {
-                    AvgDurationLabel.Text = dur.TotalMinutes >= 1
-                        ? $"Last run: ~{(int)dur.TotalMinutes}m {dur.Seconds}s"
-                        : $"Last run: ~{(int)dur.TotalSeconds}s";
-                }
-            }
-            else
-            {
-                AvgDurationLabel.Text = "Last run: N/A";
-            }
+            // Same clock source as the Dashboard, so the two pages can never disagree about the last
+            // run. History[0] is the newest entry, because AddRunResult inserts at the front.
+            //
+            // The line used to be derived from the run's recorded duration alone, which nothing ever
+            // wrote, so a run that had plainly happened was reported as "Last run: N/A".
+            var newestRun = history.FirstOrDefault();
+            LastRunSummaryLabel.Text = RunRecency.DescribeLastRunWithDuration(
+                _settingsService.GetLastRunTime(),
+                newestRun?.Duration,
+                DateTime.Now);
         }
         else
         {
             SuccessRateLabel.Text = "No data yet";
             TotalRunsLabel.Text = "";
-            AvgDurationLabel.Text = "N/A";
+            LastRunSummaryLabel.Text = "";
         }
     }
 
@@ -119,7 +114,10 @@ public partial class HistoryPage : ContentPage
 
     private View CreateHistoryView(StreakRunResult run)
     {
-        var statusColor = run.Success ? Color.FromArgb("#22C55E") : GetThemeColor("Error", "#9C2121");
+        // A rehearsal gets its own colour: a green dot would claim a delivery that never happened.
+        var statusColor = run.DryRun
+            ? Color.FromArgb("#F59E0B")
+            : run.Success ? Color.FromArgb("#22C55E") : GetThemeColor("Error", "#9C2121");
         var border = new Border
         {
             StrokeThickness = 0,
@@ -152,6 +150,36 @@ public partial class HistoryPage : ContentPage
         grid.Children.Add(statusDot);
         var infoStack = new VerticalStackLayout { Spacing = 3 };
         infoStack.Children.Add(new Label { Text = run.RunTime.ToString("MMM dd, HH:mm"), FontSize = 15, FontFamily = "InterMedium" });
+
+        if (run.DryRun)
+        {
+            var testLabel = new Label
+            {
+                Text = "Test run — nothing was sent",
+                FontSize = 13,
+                FontFamily = "InterMedium",
+            };
+            testLabel.SetAppThemeColor(Label.TextColorProperty,
+                Color.FromArgb("#B45309"), Color.FromArgb("#F59E0B"));
+            infoStack.Children.Add(testLabel);
+        }
+        else
+        {
+            // Only surfaced when it matters: an unverified send is the difference between "we think it
+            // went out" and "we know it did".
+            var (attempted, confirmed, unverified, _) = SendConfirmationSummary.Summarize(run.FriendResults);
+            if (unverified > 0 && attempted > 0)
+            {
+                var verifyLabel = new Label
+                {
+                    Text = $"{confirmed}/{attempted} confirmed, {unverified} unverified",
+                    FontSize = 13,
+                };
+                verifyLabel.SetAppThemeColor(Label.TextColorProperty,
+                    Color.FromArgb("#B45309"), Color.FromArgb("#F59E0B"));
+                infoStack.Children.Add(verifyLabel);
+            }
+        }
 
         var successCount = run.FriendResults.Count(r => r.Success);
         var totalCount = run.FriendResults.Count;

@@ -100,12 +100,94 @@ public partial class LoginPage : ContentPage
         await Done();
     }
 
+    private void OnWebViewNavigating(object? sender, WebNavigatingEventArgs e)
+    {
+        var url = e.Url;
+        if (string.IsNullOrEmpty(url))
+            return;
+
+        // Every scheme the login page legitimately navigates to. Anything else is a hand-off to
+        // another installed app rather than page content.
+        if (IsWebViewLoadableScheme(url))
+            return;
+
+        // TikTok signals its native app to open with custom schemes (snssdk1180://, snssdk1233://,
+        // intent://, ...). A WebView cannot load those: Android shows a blank
+        // "net::ERR_UNKNOWN_URL_SCHEME" error page in their place, which strands the login flow and
+        // leaves the user with no way forward. Cancel the hand-off; when the URL carries the real
+        // destination in its params_url query parameter, follow that instead.
+        e.Cancel = true;
+
+        var target = ExtractParamsUrl(url);
+        if (target != null)
+            TikTokWebView.Source = target;
+    }
+
+    private static bool IsWebViewLoadableScheme(string url)
+    {
+        foreach (var scheme in LoadableSchemes)
+        {
+            if (url.StartsWith(scheme, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static readonly string[] LoadableSchemes =
+    {
+        "http://", "https://", "about:", "data:", "blob:", "file:", "content:", "javascript:"
+    };
+
+    /// <summary>
+    /// Pulls the http(s) destination out of an app hand-off URL, e.g.
+    /// <c>snssdk1233://...?params_url=https%3A%2F%2Fwww.tiktok.com%2F&amp;...</c>. Returns null when the
+    /// URL has no usable http(s) destination.
+    /// </summary>
+    private static string? ExtractParamsUrl(string url)
+    {
+        const string key = "params_url=";
+        var index = url.IndexOf(key, StringComparison.OrdinalIgnoreCase);
+        if (index < 0)
+            return null;
+
+        var value = url.Substring(index + key.Length);
+        var end = value.IndexOfAny(new[] { '&', '#' });
+        if (end >= 0)
+            value = value.Substring(0, end);
+
+        string decoded;
+        try
+        {
+            decoded = Uri.UnescapeDataString(value);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Could not decode params_url '{value}': {ex.Message}");
+            return null;
+        }
+
+        return decoded.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? decoded : null;
+    }
+
     private async void OnBackClicked(object? sender, EventArgs e)
     {
         if (TikTokWebView.CanGoBack)
+        {
             TikTokWebView.GoBack();
-        else
+        }
+        else if (Navigation.NavigationStack.Count > 1)
+        {
             await Navigation.PopAsync();
+        }
+        else if (Navigation.ModalStack.Count > 0)
+        {
+            await Navigation.PopModalAsync();
+        }
+        else if (Shell.Current != null)
+        {
+            await Shell.Current.GoToAsync("//DashboardPage");
+        }
     }
 
     private void OnRefreshClicked(object? sender, EventArgs e)
@@ -128,8 +210,11 @@ public partial class LoginPage : ContentPage
             return;
         _completionInProgress = true;
 
-        TearDownLoginWebView();
-
+        // NOTE: the login WebView is intentionally NOT torn down here. Doing it before the session was
+        // persisted - and before the "Logged In" alert and the navigation completed - disconnected the
+        // WebView handler while its platform view was still attached to the live page, which closed the
+        // app as soon as the alert was dismissed. OnDisappearing performs the teardown instead, once the
+        // page really is going away.
         if (_isLoggedIn)
         {
             if (!_sessionService.TrySetSessionValid(true, out var persistError))
@@ -139,6 +224,12 @@ public partial class LoginPage : ContentPage
                     persistError ?? "Login succeeded but session state did not persist on this device.", "OK");
                 return;
             }
+
+#if ANDROID
+            // Flush the cookies this login produced to disk before the WebView is torn down in
+            // OnDisappearing, so the session survives the teardown and the next cold start.
+            TikTokWebViewHelper.FlushCookies();
+#endif
 
             AppStorageProvider.Current.SetBool(AppConstants.AuthRequiredKey, false);
 
@@ -166,7 +257,18 @@ public partial class LoginPage : ContentPage
                 await DisplayAlert("Logged In", body, "OK");
             }
 
-            await Navigation.PopAsync();
+            if (Navigation.NavigationStack.Count > 1)
+            {
+                await Navigation.PopAsync();
+            }
+            else if (Navigation.ModalStack.Count > 0)
+            {
+                await Navigation.PopModalAsync();
+            }
+            else if (Shell.Current != null)
+            {
+                await Shell.Current.GoToAsync("//DashboardPage");
+            }
         }
         else
         {

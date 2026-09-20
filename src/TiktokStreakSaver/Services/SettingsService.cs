@@ -23,6 +23,9 @@ public class SettingsService
     private const string FixedTimeHourKey = "fixed_time_hour";
     private const string FixedTimeMinuteKey = "fixed_time_minute";
 
+    /// <summary>Comma-separated "HH:mm" list of daily run times.</summary>
+    private const string FixedTimesKey = "fixed_times";
+
     // ── Resilience: retry tracking + event-driven recovery flags ──
     private const string RetryCountTodayKey = "retry_count_today";
     private const string RetryCountDateKey = "retry_count_date";
@@ -30,6 +33,12 @@ public class SettingsService
     private const string LastRunFailureReasonKey = "last_run_failure_reason";
     private const string BatteryAnticipationDateKey = "battery_anticipation_date";
     private const string SendOnBatteryLowKey = "send_on_battery_low";
+
+    // ── Streak risk alerts ──
+    private const string StreakRiskAlertsKey = "streak_risk_alerts";
+    private const string StreakRiskWarningHourKey = "streak_risk_warning_hour";
+    private const string StreakRiskNotifiedDateKey = "streak_risk_notified_date";
+    private const string DryRunKey = "dry_run";
 
     /// <summary>
     /// Maximum hourly retries per calendar day, in addition to the original scheduled run.
@@ -62,6 +71,18 @@ public class SettingsService
     /// Default interval in hours.
     /// </summary>
     public const int DefaultIntervalHours = 23;
+
+    /// <summary>
+    /// How many runs are kept before the oldest are dropped.
+    /// <para>
+    /// History is serialised to a single JSON string in Preferences and rewritten on every run, so
+    /// this is a deliberate size/latency trade-off rather than "as much as possible": at roughly 1-2 KB
+    /// per run, a few hundred entries stays comfortably inside what SharedPreferences handles well.
+    /// It was previously 50, which the hourly retry could exhaust within days and which left too
+    /// little data for any week-over-week comparison.
+    /// </para>
+    /// </summary>
+    public const int MaxRunHistoryEntries = 200;
 
     #region Friends List
 
@@ -486,23 +507,18 @@ public class SettingsService
         _storage.SetBool(SkipUnreachableUsersKey, skip);
     }
 
-    public DateTime GetNextRunTime()
-    {
-        if (GetUseFixedTime())
-        {
-            var now = DateTime.Now;
-            var today = now.Date.AddHours(GetFixedTimeHour()).AddMinutes(GetFixedTimeMinute());
-            return today > now ? today : today.AddDays(1);
-        }
-
-        var lastRun = GetLastRunTime();
-        var intervalHours = GetIntervalHours();
-
-        if (lastRun.HasValue)
-            return lastRun.Value.AddHours(intervalHours);
-
-        return DateTime.Now;
-    }
+    /// <summary>
+    /// When the next automated run is due, matching the alarm that will actually fire.
+    /// Delegates to <see cref="ScheduleCalculator"/> so the Dashboard label and the schedule
+    /// itself can never disagree.
+    /// </summary>
+    public DateTime GetNextRunTime() =>
+        ScheduleCalculator.Next(
+            GetUseFixedTime(),
+            GetFixedDailyTimes(),
+            GetIntervalHours(),
+            GetLastRunTime(),
+            DateTime.Now);
 
     /// <summary>
     /// When true, scheduling uses a fixed daily clock time (Hour:Minute) instead of
@@ -533,6 +549,67 @@ public class SettingsService
     }
 
     public void SetFixedTimeMinute(int minute) => _storage.SetLong(FixedTimeMinuteKey, Math.Clamp(minute, 0, 59));
+
+    /// <summary>
+    /// The daily run times, sorted and de-duplicated. Always returns at least one entry.
+    /// <para>
+    /// Installs that predate multiple times only have the single hour/minute keys, so those are used
+    /// as the fallback. That keeps an existing schedule working across the upgrade instead of
+    /// silently resetting it.
+    /// </para>
+    /// </summary>
+    public List<TimeSpan> GetFixedDailyTimes()
+    {
+        var parsed = ParseFixedTimes(_storage.GetString(FixedTimesKey, string.Empty));
+        if (parsed.Count > 0)
+            return parsed;
+
+        return new List<TimeSpan> { new(GetFixedTimeHour(), GetFixedTimeMinute(), 0) };
+    }
+
+    /// <summary>
+    /// Stores the daily run times. An empty collection keeps the currently configured single time
+    /// rather than leaving the app with no schedule at all.
+    /// </summary>
+    public void SetFixedDailyTimes(IEnumerable<TimeSpan>? times)
+    {
+        var normalized = ScheduleCalculator.NormalizeDailyTimes(times).ToList();
+
+        if (normalized.Count == 0)
+            normalized.Add(new TimeSpan(GetFixedTimeHour(), GetFixedTimeMinute(), 0));
+
+        _storage.SetString(FixedTimesKey,
+            string.Join(",", normalized.Select(t => $"{t.Hours:D2}:{t.Minutes:D2}")));
+
+        // Keep the legacy single-time keys in step so anything still reading them stays correct.
+        SetFixedTimeHour(normalized[0].Hours);
+        SetFixedTimeMinute(normalized[0].Minutes);
+    }
+
+    private static List<TimeSpan> ParseFixedTimes(string raw)
+    {
+        var parsed = new List<TimeSpan>();
+
+        if (string.IsNullOrWhiteSpace(raw))
+            return parsed;
+
+        foreach (var part in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var bits = part.Split(':');
+            if (bits.Length != 2)
+                continue;
+
+            if (!int.TryParse(bits[0], out var hour) || !int.TryParse(bits[1], out var minute))
+                continue;
+
+            if (hour is < 0 or > 23 || minute is < 0 or > 59)
+                continue;
+
+            parsed.Add(new TimeSpan(hour, minute, 0));
+        }
+
+        return ScheduleCalculator.NormalizeDailyTimes(parsed).ToList();
+    }
 
     #endregion
 
@@ -623,6 +700,46 @@ public class SettingsService
 
     #endregion
 
+    #region Streak risk alerts
+
+    /// <summary>
+    /// User toggle: warn when friends are still unsent once the day is running out.
+    /// Default ON - the point of the app is not losing streaks, and a silent failure is the worst case.
+    /// </summary>
+    public bool GetStreakRiskAlerts() => _storage.GetBool(StreakRiskAlertsKey, true);
+
+    public void SetStreakRiskAlerts(bool value) => _storage.SetBool(StreakRiskAlertsKey, value);
+
+    /// <summary>
+    /// Rehearsal mode: run the whole automation but send nothing, so the user can confirm every friend
+    /// is reachable before trusting it with real messages. Off by default - it is a diagnostic.
+    /// </summary>
+    public bool GetDryRun() => _storage.GetBool(DryRunKey, false);
+
+    public void SetDryRun(bool value) => _storage.SetBool(DryRunKey, value);
+
+    /// <summary>Local hour after which an unsent streak is reported as at risk.</summary>
+    public int GetStreakRiskWarningHour()
+    {
+        var stored = (int)_storage.GetLong(StreakRiskWarningHourKey, StreakRiskEvaluator.DefaultWarningHour);
+        return Math.Clamp(stored, 0, 23);
+    }
+
+    public void SetStreakRiskWarningHour(int hour) =>
+        _storage.SetLong(StreakRiskWarningHourKey, Math.Clamp(hour, 0, 23));
+
+    /// <summary>
+    /// True when the at-risk warning was already shown today. One warning per day is enough; repeating
+    /// it would train the user to ignore it.
+    /// </summary>
+    public bool WasRiskAlertSentToday() =>
+        _storage.GetLong(StreakRiskNotifiedDateKey, 0L) == DateTime.Now.Date.Ticks;
+
+    public void MarkRiskAlertSentToday() =>
+        _storage.SetLong(StreakRiskNotifiedDateKey, DateTime.Now.Date.Ticks);
+
+    #endregion
+
     #region Run History
 
     public List<StreakRunResult> GetRunHistory()
@@ -657,8 +774,8 @@ public class SettingsService
         var history = GetRunHistory();
         history.Insert(0, result);
 
-        if (history.Count > 50)
-            history = history.Take(50).ToList();
+        if (history.Count > MaxRunHistoryEntries)
+            history = history.Take(MaxRunHistoryEntries).ToList();
 
         var json = JsonSerializer.Serialize(history, AppJsonContext.Default.ListStreakRunResult);
         _storage.SetString(RunHistoryKey, json);

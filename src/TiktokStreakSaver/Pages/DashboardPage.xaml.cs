@@ -294,15 +294,9 @@ public partial class DashboardPage : ContentPage
     private void UpdateStatus()
     {
         var isScheduled = _settingsService.IsAutomationActive();
-        var lastRun = _settingsService.GetLastRunTime();
-        if (lastRun.HasValue)
-        {
-            var timeSince = DateTime.Now - lastRun.Value;
-            if (timeSince.TotalMinutes < 60) LastRunLabel.Text = $"{(int)timeSince.TotalMinutes} minutes ago";
-            else if (timeSince.TotalHours < 24) LastRunLabel.Text = $"{(int)timeSince.TotalHours} hours ago";
-            else LastRunLabel.Text = lastRun.Value.ToString("MMM dd, HH:mm");
-        }
-        else LastRunLabel.Text = "Never";
+        // Formatted by the shared helper so this label and the Activity page line can never disagree
+        // about when the last run happened.
+        LastRunLabel.Text = RunRecency.DescribeLastRun(_settingsService.GetLastRunTime(), DateTime.Now);
 
         if (isScheduled)
         {
@@ -324,31 +318,20 @@ public partial class DashboardPage : ContentPage
 #endif
 
         var history = _settingsService.GetRunHistory();
-        var latestResult = history.FirstOrDefault();
         var currentEnabledFriends = _settingsService.GetEnabledFriends();
 
-        bool ranToday = latestResult != null && latestResult.RunTime.Date == DateTime.Today;
+        // Summed across every run of the day rather than read off the newest entry, so a run that
+        // skipped every friend (already messaged today) cannot reset the counters. See
+        // DailyProgressCalculator for the full reasoning.
+        var progress = DailyProgressCalculator.Calculate(
+            history, currentEnabledFriends.Count, DateTime.Today);
 
-        int sentToday = 0;
-        int successPercent = 0;
-        int remainingToday = currentEnabledFriends.Count;
-        string progressText = $"0/{currentEnabledFriends.Count}";
-        float progressFraction = 0f;
-
-        if (ranToday && latestResult != null)
-        {
-            sentToday = latestResult.FriendResults.Count(r => r.Success);
-            int totalAttempted = latestResult.FriendResults.Count;
-
-            if (totalAttempted > 0)
-                successPercent = (int)((double)sentToday / totalAttempted * 100);
-            else
-                successPercent = 0;
-
-            remainingToday = Math.Max(0, currentEnabledFriends.Count - sentToday);
-            progressText = $"{sentToday}/{currentEnabledFriends.Count}";
-            progressFraction = currentEnabledFriends.Count > 0 ? (float)sentToday / currentEnabledFriends.Count : 0f;
-        }
+        bool ranToday = progress.RanToday;
+        int sentToday = progress.SentToday;
+        int successPercent = progress.SuccessPercent;
+        int remainingToday = progress.Remaining;
+        string progressText = progress.ProgressText;
+        float progressFraction = progress.Fraction;
 
         OverviewSentLabel.Text = sentToday.ToString();
         OverviewSuccessLabel.Text = ranToday ? $"{successPercent}%" : "--";

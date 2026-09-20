@@ -10,6 +10,9 @@ public static class AppConstants
 
     public const string ActionStreakAlarm = PackageName + ".ACTION_STREAK_ALARM";
 
+    /// <summary>Daily check that warns when streaks are still unsent late in the day.</summary>
+    public const string ActionStreakRiskAlarm = PackageName + ".ACTION_STREAK_RISK_ALARM";
+
     /// <summary>App Group for shared settings, cookies, and extension state.</summary>
     public const string AppGroupId = "group.com.jon2g.tiktokstreaksaver";
 

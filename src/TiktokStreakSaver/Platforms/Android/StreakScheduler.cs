@@ -23,41 +23,22 @@ public static class StreakScheduler
     public static void ScheduleNextRun(Context context)
     {
         var settingsService = new SettingsService();
-        DateTime nextRunTime;
 
-        if (settingsService.GetUseFixedTime())
-        {
-            // Fixed daily mode: today's target time, or tomorrow if it's already past.
-            var now = DateTime.Now;
-            var hour = settingsService.GetFixedTimeHour();
-            var minute = settingsService.GetFixedTimeMinute();
-            nextRunTime = now.Date.AddHours(hour).AddMinutes(minute);
-            if (nextRunTime <= now)
-                nextRunTime = nextRunTime.AddDays(1);
-        }
-        else
-        {
-            var intervalHours = settingsService.GetIntervalHours();
-            var lastRun = settingsService.GetLastRunTime();
-
-            if (lastRun.HasValue)
-            {
-                nextRunTime = lastRun.Value.AddHours(intervalHours);
-                // If the calculated time is in the past, schedule for now + small delay
-                if (nextRunTime < DateTime.Now)
-                {
-                    nextRunTime = DateTime.Now.AddMinutes(1);
-                }
-            }
-            else
-            {
-                // First run - schedule for interval from now
-                nextRunTime = DateTime.Now.AddHours(intervalHours);
-            }
-        }
+        // Same calculation as SettingsService.GetNextRunTime, so the alarm that fires and the
+        // "Next Scheduled Run" label on the Dashboard can no longer disagree.
+        var nextRunTime = ScheduleCalculator.Next(
+            settingsService.GetUseFixedTime(),
+            settingsService.GetFixedDailyTimes(),
+            settingsService.GetIntervalHours(),
+            settingsService.GetLastRunTime(),
+            DateTime.Now);
 
         ScheduleAt(context, nextRunTime);
         settingsService.SetScheduled(true);
+
+        // Arm the late-day warning alongside the run itself. Doing it here covers every existing
+        // call site (login, profile changes, boot, run completion) without each needing to know about it.
+        StreakRiskScheduler.ScheduleNext(context);
     }
 
     /// <summary>
@@ -126,31 +107,50 @@ public static class StreakScheduler
         // Convert to milliseconds since epoch
         var triggerAtMillis = new DateTimeOffset(triggerTime).ToUnixTimeMilliseconds();
 
-        // Use exact alarm for precise timing
-        if (Build.VERSION.SdkInt >= BuildVersionCodes.S)
+        // Use exact alarm for precise timing.
+        // This runs from the post-login flow, which is an async void event handler, so an exception
+        // thrown here would reach the Android main looper and close the app. Scheduling the alarm is
+        // best-effort: guard every call and degrade to a less exact alarm instead of failing.
+        try
         {
-            // Android 12+ requires checking for exact alarm permission
-            if (alarmManager.CanScheduleExactAlarms())
+            if (Build.VERSION.SdkInt >= BuildVersionCodes.S)
+            {
+                // Android 12+ requires checking for exact alarm permission
+                if (alarmManager.CanScheduleExactAlarms())
+                {
+                    alarmManager.SetExactAndAllowWhileIdle(AlarmType.RtcWakeup, triggerAtMillis, pendingIntent);
+                }
+                else
+                {
+                    // Fall back to inexact alarm, but request permission
+                    alarmManager.SetAndAllowWhileIdle(AlarmType.RtcWakeup, triggerAtMillis, pendingIntent);
+                }
+            }
+            else if (Build.VERSION.SdkInt >= BuildVersionCodes.M)
             {
                 alarmManager.SetExactAndAllowWhileIdle(AlarmType.RtcWakeup, triggerAtMillis, pendingIntent);
             }
+            else if (Build.VERSION.SdkInt >= BuildVersionCodes.Kitkat)
+            {
+                alarmManager.SetExact(AlarmType.RtcWakeup, triggerAtMillis, pendingIntent);
+            }
             else
             {
-                // Fall back to inexact alarm, but request permission
-                alarmManager.SetAndAllowWhileIdle(AlarmType.RtcWakeup, triggerAtMillis, pendingIntent);
+                alarmManager.Set(AlarmType.RtcWakeup, triggerAtMillis, pendingIntent);
             }
         }
-        else if (Build.VERSION.SdkInt >= BuildVersionCodes.M)
+        catch (Exception ex)
         {
-            alarmManager.SetExactAndAllowWhileIdle(AlarmType.RtcWakeup, triggerAtMillis, pendingIntent);
-        }
-        else if (Build.VERSION.SdkInt >= BuildVersionCodes.Kitkat)
-        {
-            alarmManager.SetExact(AlarmType.RtcWakeup, triggerAtMillis, pendingIntent);
-        }
-        else
-        {
-            alarmManager.Set(AlarmType.RtcWakeup, triggerAtMillis, pendingIntent);
+            System.Diagnostics.Debug.WriteLine($"StreakScheduler: exact alarm unavailable, falling back: {ex.Message}");
+            try
+            {
+                alarmManager.SetAndAllowWhileIdle(AlarmType.RtcWakeup, triggerAtMillis, pendingIntent);
+            }
+            catch (Exception fallbackEx)
+            {
+                // Nothing left to try; the next app launch reschedules.
+                System.Diagnostics.Debug.WriteLine($"StreakScheduler: inexact alarm failed too: {fallbackEx.Message}");
+            }
         }
 
         System.Diagnostics.Debug.WriteLine($"StreakScheduler: Scheduled next run at {triggerTime}");

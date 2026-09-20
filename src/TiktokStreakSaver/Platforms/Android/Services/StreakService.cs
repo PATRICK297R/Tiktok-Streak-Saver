@@ -30,6 +30,12 @@ public class StreakService : Service
     private List<FriendConfig>? _friendsToProcess;
     private int _currentFriendIndex;
     private StreakRunResult? _runResult;
+
+    /// <summary>
+    /// Times the run so the Activity page can say how long it took. Nothing recorded this before, so
+    /// the page had no duration to show and reported a run it had already saved as "Last run: N/A".
+    /// </summary>
+    private System.Diagnostics.Stopwatch? _runStopwatch;
     private PowerManager.WakeLock? _wakeLock;
     private string _baseScript = string.Empty;
     private readonly List<string> _disabledUsernames = new();
@@ -61,22 +67,90 @@ public class StreakService : Service
     private const int MaxSendAttemptsPerFriend = 4;
     private bool _allowSendRetries = true;
 
+    /// <summary>
+    /// Verification reported by the script for the send currently in flight: true when the composer
+    /// cleared, false when it did not. Null means nothing was reported (a failed send, or an older
+    /// script build that has no verification).
+    /// </summary>
+    private bool? _pendingVerification;
+
+    /// <summary>
+    /// Rehearsal mode: walk the automation and confirm each chat is reachable, but never send. The
+    /// results are recorded and then excluded from every "sent today" figure.
+    /// </summary>
+    private bool _dryRun;
+
     private static List<string> _logs = new();
+    private static RunLogStore? _logStore;
+    private static readonly object _logLock = new();
+
+    /// <summary>
+    /// File-backed log that outlives the process. Without it a run killed mid-flight - the case the
+    /// service already anticipates - left no evidence at all.
+    /// </summary>
+    private static RunLogStore LogStore
+    {
+        get
+        {
+            if (_logStore == null)
+            {
+                var path = System.IO.Path.Combine(FileSystem.AppDataDirectory, AppConstants.RunLogsFileName);
+                _logStore = new RunLogStore(path);
+            }
+
+            return _logStore;
+        }
+    }
 
     public static List<string> GetLogs()
     {
-        return _logs ?? new List<string>();
+        // The in-memory list is authoritative while this process is alive and holds the newest run.
+        lock (_logLock)
+        {
+            if (_logs.Count > 0)
+                return new List<string>(_logs);
+        }
+
+        // Empty means a fresh process (for example the user opened the app after the service was
+        // killed), so fall back to what the previous run managed to persist.
+        return LogStore.ReadRecent(RunLogStore.DefaultMaxLines);
     }
 
     public static void ClearLogs()
     {
-        _logs = new List<string>();
+        lock (_logLock)
+        {
+            _logs = new List<string>();
+        }
+
+        LogStore.Clear();
+    }
+
+    /// <summary>Starts a clean log for a new run, on disk as well as in memory.</summary>
+    private static void ResetRunLog()
+    {
+        lock (_logLock)
+        {
+            _logs.Clear();
+        }
+
+        LogStore.Clear();
+    }
+
+    private static void AppendLogEntry(string entry)
+    {
+        lock (_logLock)
+        {
+            _logs.Add(entry);
+        }
+
+        LogStore.Append(entry);
     }
 
     private static void AppLog(string phase, string username, string message)
     {
-        var entry = $"[{DateTime.Now:HH:mm:ss}] [{phase}] [{username}] {message}";
-        _logs.Add(entry);
+        var entry = RunLogStore.Format(phase, username, message, DateTime.Now);
+        AppendLogEntry(entry);
         System.Diagnostics.Debug.WriteLine(entry);
     }
 
@@ -275,8 +349,20 @@ public class StreakService : Service
 
             _currentFriendIndex = 0;
             _runResult = new StreakRunResult();
+            _runStopwatch = System.Diagnostics.Stopwatch.StartNew();
             _cooldownSkippedCount = 0;
-            _logs.Clear();
+
+            // Rehearsal mode is read once per run so toggling it mid-run cannot produce a mixture of
+            // real and simulated sends in the same history entry.
+            _dryRun = _settingsService?.GetDryRun() ?? false;
+            _runResult.DryRun = _dryRun;
+            _pendingVerification = null;
+
+            // Fresh log per run, in memory and on disk.
+            ResetRunLog();
+
+            if (_dryRun)
+                AppLog("SYSTEM", "-", "Dry run enabled — no messages will be sent");
 
             _friendsToProcess = new List<FriendConfig>();
 
@@ -458,9 +544,11 @@ public class StreakService : Service
         var friend = _friendsToProcess![_currentFriendIndex];
         string message;
 
+        string? randomizedMessage = null;
+
         if (_shuffledNormalMessages != null && _shuffledNormalMessages.Count > 0)
         {
-            message = _shuffledNormalMessages[_normalMessageIndex % _shuffledNormalMessages.Count];
+            randomizedMessage = _shuffledNormalMessages[_normalMessageIndex % _shuffledNormalMessages.Count];
             _normalMessageIndex++;
             // Reshuffle when pool is exhausted so the same per-run sequence is not repeated.
             if (_normalMessageIndex >= _shuffledNormalMessages.Count)
@@ -469,10 +557,15 @@ public class StreakService : Service
                 _normalMessageIndex = 0;
             }
         }
-        else
-        {
-            message = _settingsService?.GetMessageText() ?? SettingsService.DefaultMessage;
-        }
+
+        // This friend's own message wins over the randomized pool and the shared message.
+        message = MessageResolver.Resolve(
+            friend.CustomMessage,
+            randomizedMessage,
+            _settingsService?.GetMessageText() ?? SettingsService.DefaultMessage);
+
+        // Placeholders are resolved per friend, so one template can address everyone by name.
+        message = MessageTemplate.Render(message, friend.Username, friend.DisplayName);
 
         var displayLabel = friend.IsGroup ? friend.DisplayName : $"@{friend.Username}";
         UpdateNotification($"{_currentFriendIndex + 1}/{_friendsToProcess.Count} \u2014 Processing: {displayLabel}",
@@ -513,6 +606,10 @@ public class StreakService : Service
         var automationScript = this._baseScript.Replace("[UserName]", escapedTarget);
         automationScript = automationScript.Replace("[Message]", escapedMessage);
         automationScript = automationScript.Replace("[IsGroup]", isGroup ? "true" : "false");
+
+        // If this placeholder ever went unreplaced the script would compare against the literal text and
+        // decide against dry run, which is the safe direction: it falls back to normal sending.
+        automationScript = automationScript.Replace("[DryRun]", _dryRun ? "true" : "false");
         return automationScript;
     }
 
@@ -588,9 +685,35 @@ public class StreakService : Service
             return;
         }
 
+        if (_dryRun)
+        {
+            // Rehearsal: the run reached this chat, which is the whole point of the exercise. Nothing
+            // was sent, so LastMessageSent is deliberately left untouched and the row is flagged so it
+            // can never be counted as delivered.
+            _pendingVerification = null;
+            AppLog("DRYRUN", label, "Chat reachable — nothing sent (dry run)");
+
+            _runResult?.FriendResults.Add(new FriendMessageResult
+            {
+                FriendId = friend.Id,
+                Username = username,
+                Success = true,
+                ErrorMessage = null,
+                DryRun = true,
+                Verified = null,
+            });
+
+            AdvanceToNextFriend(username);
+            return;
+        }
+
         friend.SuccessCount++;
         friend.LastMessageSent = DateTime.Now;
-        AppLog("SUCCESS", label, "Message sent");
+
+        var verification = SendVerification.Classify(scriptReportedSuccess: true, composerCleared: _pendingVerification);
+        _pendingVerification = null;
+
+        AppLog("SUCCESS", label, $"Message sent ({SendVerification.Describe(verification)})");
 
         _settingsService.UpdateFriend(friend);
 
@@ -599,7 +722,8 @@ public class StreakService : Service
             FriendId = friend.Id,
             Username = username,
             Success = true,
-            ErrorMessage = null
+            ErrorMessage = null,
+            Verified = SendVerification.ToVerifiedFlag(verification),
         });
 
         AdvanceToNextFriend(username);
@@ -642,6 +766,9 @@ public class StreakService : Service
             {
                 _runResult.Success = false;
                 _runResult.ErrorMessage = "Skipped: no Wi‑Fi or mobile data";
+                // A skipped run is still a run, so it gets a duration too. The retry below schedules
+                // itself deliberately rather than leaning on the interval clock.
+                _runResult.Duration = TakeRunDuration();
                 _settingsService.AddRunResult(_runResult);
             }
 
@@ -689,6 +816,19 @@ public class StreakService : Service
         }
     }
 
+    /// <summary>
+    /// How long the run took, or null when it never got started. Stopping here keeps a second
+    /// completion path from carrying on counting.
+    /// </summary>
+    private TimeSpan? TakeRunDuration()
+    {
+        if (_runStopwatch is null)
+            return null;
+
+        _runStopwatch.Stop();
+        return _runStopwatch.Elapsed;
+    }
+
     private void CompleteService(bool success, string message)
     {
         try
@@ -698,6 +838,7 @@ public class StreakService : Service
             {
                 _runResult.Success = success;
                 _runResult.ErrorMessage = success ? null : message;
+                _runResult.Duration = TakeRunDuration();
                 _settingsService.AddRunResult(_runResult);
                 _settingsService.SetLastRunTime(DateTime.Now);
             }
@@ -844,12 +985,24 @@ public class StreakService : Service
             _service._mainHandler?.Post(() => _service.OnMessageResult(username, success, error));
         }
 
+        /// <summary>
+        /// Reports whether the composer was empty after sending. Called by the script just before
+        /// <see cref="OnMessageSent"/>, so the value is already waiting when the result arrives.
+        /// </summary>
+        [JavascriptInterface]
+        [Export("reportVerification")]
+        public void ReportVerification(bool composerCleared)
+        {
+            _service._mainHandler?.Post(() => _service._pendingVerification = composerCleared);
+        }
+
         [JavascriptInterface]
         [Export("log")]
         public void Log(string message)
         {
-            var entry = $"[{DateTime.Now:HH:mm:ss}] {message}";
-            StreakService._logs.Add(entry);
+            // Messages from the injected script carry no phase, so they keep the plain layout. They are
+            // persisted too, because the script is where a run tends to stall.
+            StreakService.AppendLogEntry($"[{DateTime.Now:HH:mm:ss}] {message}");
         }
     }
 }

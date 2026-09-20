@@ -215,16 +215,38 @@
                                         Toggled="OnFixedTimeToggled"/>
                             </Grid>
 
-                            <Grid x:Name="TimePickerRow" IsVisible="False"
-                                  ColumnDefinitions="*, Auto" ColumnSpacing="16">
-                                <Label Text="Run at" VerticalOptions="Center"
-                                       Style="{StaticResource ControlTitleLabel}"/>
-                                <TimePicker x:Name="ScheduleTimePicker"
-                                            Grid.Column="1"
-                                            Format="HH:mm"
-                                            VerticalOptions="Center"
-                                            PropertyChanged="OnTimePickerChanged"/>
-                            </Grid>
+                            <VerticalStackLayout x:Name="TimePickerRow" IsVisible="False" Spacing="10">
+                                <Grid ColumnDefinitions="*, Auto" ColumnSpacing="12">
+                                    <Label Text="Run at" VerticalOptions="Center"
+                                           Style="{StaticResource ControlTitleLabel}"/>
+                                    <TimePicker x:Name="ScheduleTimePicker"
+                                                Grid.Column="1"
+                                                Format="HH:mm"
+                                                VerticalOptions="Center"
+                                                PropertyChanged="OnTimePickerChanged"/>
+                                </Grid>
+
+                                <!-- Extra run times. Each row has its own picker, so editing one entry
+                                     cannot be confused with choosing a new one to add. -->
+                                <VerticalStackLayout x:Name="ScheduleTimesList" Spacing="6"/>
+
+                                <Button x:Name="AddScheduleTimeButton"
+                                        Text="+ Add another time"
+                                        HorizontalOptions="Start"
+                                        BackgroundColor="{AppThemeBinding Light={StaticResource PrimarySubtle}, Dark={StaticResource Gray800}}"
+                                        TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
+                                        FontFamily="InterSemiBold"
+                                        FontSize="13"
+                                        CornerRadius="12"
+                                        HeightRequest="40"
+                                        Padding="14,0"
+                                        Clicked="OnAddScheduleTimeClicked"/>
+
+                                <Label x:Name="ScheduleTimesHint"
+                                       Text="Add more times to run the automation several times a day."
+                                       Style="{StaticResource DataLabel}"
+                                       LineBreakMode="WordWrap"/>
+                            </VerticalStackLayout>
                         </VerticalStackLayout>
 
                         <!-- Interval (hours-only) — used when Daily Schedule is OFF -->
@@ -265,6 +287,38 @@
                                     Grid.Column="1"
                                     VerticalOptions="Center"
                                     Toggled="OnSendOnBatteryLowToggled"/>
+                        </Grid>
+
+                        <Grid x:Name="StreakRiskRow" ColumnDefinitions="*, Auto" ColumnSpacing="16">
+                            <VerticalStackLayout VerticalOptions="Center" Spacing="4">
+                                <Label Text="Streak risk alerts" Style="{StaticResource ControlTitleLabel}"/>
+                                <Label Text="Warn me if friends still have no message late in the day" Style="{StaticResource DataLabel}" LineBreakMode="WordWrap"/>
+                            </VerticalStackLayout>
+                            <Switch x:Name="StreakRiskSwitch"
+                                    Grid.Column="1"
+                                    VerticalOptions="Center"
+                                    Toggled="OnStreakRiskToggled"/>
+                        </Grid>
+
+                        <Grid x:Name="StreakRiskTimeRow" ColumnDefinitions="*, Auto" ColumnSpacing="16" IsVisible="False">
+                            <Label Text="Warn me after" VerticalOptions="Center"
+                                   Style="{StaticResource ControlTitleLabel}"/>
+                            <TimePicker x:Name="StreakRiskTimePicker"
+                                        Grid.Column="1"
+                                        Format="HH:mm"
+                                        VerticalOptions="Center"
+                                        PropertyChanged="OnStreakRiskTimeChanged"/>
+                        </Grid>
+
+                        <Grid x:Name="DryRunRow" ColumnDefinitions="*, Auto" ColumnSpacing="16">
+                            <VerticalStackLayout VerticalOptions="Center" Spacing="4">
+                                <Label Text="Test run (send nothing)" Style="{StaticResource ControlTitleLabel}"/>
+                                <Label Text="Walks every friend to check the chat is reachable, without sending. Test runs never count as sent." Style="{StaticResource DataLabel}" LineBreakMode="WordWrap"/>
+                            </VerticalStackLayout>
+                            <Switch x:Name="DryRunSwitch"
+                                    Grid.Column="1"
+                                    VerticalOptions="Center"
+                                    Toggled="OnDryRunToggled"/>
                         </Grid>
                         </VerticalStackLayout>
                     </VerticalStackLayout>

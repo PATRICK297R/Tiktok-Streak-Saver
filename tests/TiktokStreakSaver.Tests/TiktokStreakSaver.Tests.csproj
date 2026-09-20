@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<!-- Plain net9.0 on purpose: the logic under test is deliberately free of MAUI and Android
+		     dependencies, so the suite runs on any runner without an Android workload. -->
+		<TargetFramework>net9.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<IsPackable>false</IsPackable>
+		<RootNamespace>TiktokStreakSaver.Tests</RootNamespace>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+		<PackageReference Include="xunit" Version="2.9.3" />
+		<PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+		<PackageReference Include="coverlet.collector" Version="6.0.3" />
+		<!--
+			Only needed for Microsoft.Maui.Controls.Internals.Preserve, which the shared production
+			sources carry. Microsoft.Maui.Controls.Core ships a plain net9.0 assembly for exactly this
+			kind of headless use.
+		-->
+		<PackageReference Include="Microsoft.Maui.Controls.Core" Version="9.0.120" />
+	</ItemGroup>
+
+	<!--
+		Shared production sources, compiled straight out of the app project. Linking the real files
+		instead of copying them means the tests always exercise the code that ships.
+	-->
+	<ItemGroup>
+		<Compile Include="../../src/TiktokStreakSaver/Models/FriendConfig.cs" Link="Shared/Models/FriendConfig.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/DailyProgressCalculator.cs" Link="Shared/Services/DailyProgressCalculator.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/ScheduleCalculator.cs" Link="Shared/Services/ScheduleCalculator.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/MessageTemplate.cs" Link="Shared/Services/MessageTemplate.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/MessageResolver.cs" Link="Shared/Services/MessageResolver.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/RunHistoryStats.cs" Link="Shared/Services/RunHistoryStats.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/RunLogStore.cs" Link="Shared/Services/RunLogStore.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/StreakRiskEvaluator.cs" Link="Shared/Services/StreakRiskEvaluator.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/SendVerification.cs" Link="Shared/Services/SendVerification.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/SendConfirmationSummary.cs" Link="Shared/Services/SendConfirmationSummary.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/RunRecency.cs" Link="Shared/Services/RunRecency.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/FriendOrder.cs" Link="Shared/Services/FriendOrder.cs" />
+	</ItemGroup>
+
+</Project>

@@ -10,6 +10,8 @@ public partial class ProfilePage : ContentPage
     private readonly SettingsService _settingsService;
     private bool _suppressIntervalChanged = false;
     private bool _suppressRandomizeToggle = false;
+    private bool _suppressScheduleTimeChanged = false;
+    private bool _suppressStreakRiskTimeChanged = false;
 #if ANDROID
     private readonly UpdateService _updateService;
     private bool _isCheckingUpdates = false;
@@ -67,13 +69,41 @@ public partial class ProfilePage : ContentPage
         }
         SendOnBatteryLowSwitch.IsToggled = _settingsService.GetSendOnBatteryLow();
 
+        StreakRiskSwitch.IsToggled = _settingsService.GetStreakRiskAlerts();
+        StreakRiskTimeRow.IsVisible = StreakRiskSwitch.IsToggled;
+        DryRunSwitch.IsToggled = _settingsService.GetDryRun();
+
+        _suppressStreakRiskTimeChanged = true;
+        try
+        {
+            var warningHour = _settingsService.GetStreakRiskWarningHour();
+            StreakRiskTimePicker.Time = new TimeSpan(warningHour, 0, 0);
+        }
+        finally
+        {
+            _suppressStreakRiskTimeChanged = false;
+        }
+
         FixedTimeSwitch.IsToggled = _settingsService.GetUseFixedTime();
-        ScheduleTimePicker.Time = new TimeSpan(
-            _settingsService.GetFixedTimeHour(),
-            _settingsService.GetFixedTimeMinute(), 0);
+
+        // Guarded: assigning Time raises PropertyChanged, and the handler persists the schedule.
+        // Loading the page must not rewrite settings as a side effect.
+        _suppressScheduleTimeChanged = true;
+        try
+        {
+            ScheduleTimePicker.Time = new TimeSpan(
+                _settingsService.GetFixedTimeHour(),
+                _settingsService.GetFixedTimeMinute(), 0);
+        }
+        finally
+        {
+            _suppressScheduleTimeChanged = false;
+        }
+
         ScheduleOptionsPanel.IsVisible = ScheduleSwitch.IsToggled;
         TimePickerRow.IsVisible = FixedTimeSwitch.IsToggled;
         IntervalPanel.IsVisible = !FixedTimeSwitch.IsToggled;
+        RefreshScheduleTimesList();
 
         _suppressIntervalChanged = true;
         try
@@ -251,9 +281,169 @@ public partial class ProfilePage : ContentPage
     private void OnTimePickerChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName != nameof(TimePicker.Time)) return;
-        var time = ScheduleTimePicker.Time;
-        _settingsService.SetFixedTimeHour(time.Hours);
-        _settingsService.SetFixedTimeMinute(time.Minutes);
+        if (_suppressScheduleTimeChanged) return;
+
+        // The picker edits the first entry. Any extra times are managed through the list below.
+        var picked = ScheduleTimePicker.Time;
+        var times = _settingsService.GetFixedDailyTimes();
+        times[0] = new TimeSpan(picked.Hours, picked.Minutes, 0);
+
+        ApplyScheduleTimes(times);
+    }
+
+    private void OnAddScheduleTimeClicked(object? sender, EventArgs e)
+    {
+        var times = _settingsService.GetFixedDailyTimes();
+
+        // Always add a time that is not in use yet, so pressing this has a visible effect every time.
+        // Reading the value from the "Run at" picker would not work: that picker edits the first entry,
+        // so whatever it shows is already in the list.
+        var startHour = times.Count > 0 ? times[0].Hours + 1 : 0;
+        var next = ScheduleCalculator.NextFreeHour(times, startHour);
+
+        if (next is null)
+        {
+            ScheduleTimesHint.Text = "All 24 hours are already scheduled.";
+            return;
+        }
+
+        times.Add(next.Value);
+        ApplyScheduleTimes(times);
+    }
+
+    /// <summary>
+    /// Persists the daily run times, refreshes the list and re-arms the alarm.
+    /// </summary>
+    private void ApplyScheduleTimes(List<TimeSpan> times)
+    {
+        _settingsService.SetFixedDailyTimes(times);
+        RefreshScheduleTimesList();
+        RescheduleForFixedDailyTimes();
+    }
+
+    /// <summary>
+    /// Rebuilds the rows beneath the picker. Row 0 is the time shown in the picker, so it is only
+    /// labelled; the remaining rows offer a remove control. The last entry can never be removed,
+    /// because a daily schedule with no time has nothing to arm.
+    /// </summary>
+    private void RefreshScheduleTimesList()
+    {
+        var times = _settingsService.GetFixedDailyTimes();
+
+        ScheduleTimesList.Children.Clear();
+        ScheduleTimesHint.Text = "Add more times to run the automation several times a day.";
+
+        // Only the extra times are listed: the first one is edited by the "Run at" picker above.
+        // Each row carries its own picker so editing an existing entry is unambiguous - the previous
+        // design reused the one picker for both editing and adding, which meant "add" could only ever
+        // produce a time that was already in the list.
+        for (var i = 1; i < times.Count; i++)
+        {
+            var index = i;
+
+            var label = new Label
+            {
+                Text = "Also at",
+                FontFamily = "InterMedium",
+                FontSize = 14,
+                VerticalOptions = LayoutOptions.Center,
+            };
+
+            var picker = new TimePicker
+            {
+                Time = times[i],
+                Format = "HH:mm",
+                VerticalOptions = LayoutOptions.Center,
+                HorizontalOptions = LayoutOptions.End,
+                WidthRequest = 110,
+            };
+
+            // Subscribed after Time is set, so building the row cannot look like a user edit.
+            picker.PropertyChanged += (_, args) => OnExtraScheduleTimeChanged(index, picker, args);
+
+            var remove = new Button
+            {
+                Text = "\u2715",
+                FontSize = 13,
+                Padding = 0,
+                WidthRequest = 34,
+                HeightRequest = 34,
+                CornerRadius = 17,
+                BackgroundColor = Colors.Transparent,
+                TextColor = Application.Current?.RequestedTheme == AppTheme.Dark
+                    ? Color.FromArgb("#FF6B7F")
+                    : Color.FromArgb("#FE2C55"),
+                VerticalOptions = LayoutOptions.Center,
+            };
+
+            remove.Clicked += (_, _) => OnRemoveScheduleTimeClicked(index);
+
+            var row = new Grid
+            {
+                ColumnSpacing = 8,
+                ColumnDefinitions =
+                {
+                    new ColumnDefinition(GridLength.Star),
+                    new ColumnDefinition(GridLength.Auto),
+                    new ColumnDefinition(GridLength.Auto),
+                },
+            };
+
+            Grid.SetColumn(label, 0);
+            row.Children.Add(label);
+
+            Grid.SetColumn(picker, 1);
+            row.Children.Add(picker);
+
+            Grid.SetColumn(remove, 2);
+            row.Children.Add(remove);
+
+            ScheduleTimesList.Children.Add(row);
+        }
+    }
+
+    /// <summary>
+    /// Saves an edit to one of the extra run times. The list is deliberately not rebuilt here: doing so
+    /// would destroy the picker the user is still interacting with.
+    /// </summary>
+    private void OnExtraScheduleTimeChanged(int index, TimePicker picker, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(TimePicker.Time)) return;
+        if (_suppressScheduleTimeChanged) return;
+
+        var times = _settingsService.GetFixedDailyTimes();
+
+        if (index <= 0 || index >= times.Count)
+            return;
+
+        var candidate = new TimeSpan(picker.Time.Hours, picker.Time.Minutes, 0);
+
+        if (times[index] == candidate)
+            return;
+
+        times[index] = candidate;
+
+        _settingsService.SetFixedDailyTimes(times);
+        RescheduleForFixedDailyTimes();
+    }
+
+    private void OnRemoveScheduleTimeClicked(int index)
+    {
+        var times = _settingsService.GetFixedDailyTimes();
+
+        if (index <= 0 || index >= times.Count)
+            return;
+
+        times.RemoveAt(index);
+
+        if (times.Count == 0)
+            return;
+
+        ApplyScheduleTimes(times);
+    }
+
+    private void RescheduleForFixedDailyTimes()
+    {
 #if ANDROID
         if (_settingsService.IsScheduled() && _settingsService.GetUseFixedTime())
         {
@@ -304,6 +494,38 @@ public partial class ProfilePage : ContentPage
     private void OnSendOnBatteryLowToggled(object? sender, ToggledEventArgs e)
     {
         _settingsService.SetSendOnBatteryLow(e.Value);
+    }
+
+    private void OnStreakRiskToggled(object? sender, ToggledEventArgs e)
+    {
+        _settingsService.SetStreakRiskAlerts(e.Value);
+        StreakRiskTimeRow.IsVisible = e.Value;
+        RescheduleStreakRisk();
+    }
+
+    private void OnDryRunToggled(object? sender, ToggledEventArgs e)
+    {
+        _settingsService.SetDryRun(e.Value);
+    }
+
+    private void OnStreakRiskTimeChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(TimePicker.Time)) return;
+        if (_suppressStreakRiskTimeChanged) return;
+
+        _settingsService.SetStreakRiskWarningHour(StreakRiskTimePicker.Time.Hours);
+        RescheduleStreakRisk();
+    }
+
+    /// <summary>
+    /// Re-arms the daily risk check so a change takes effect immediately instead of at the next reboot.
+    /// </summary>
+    private void RescheduleStreakRisk()
+    {
+#if ANDROID
+        var context = Platform.CurrentActivity ?? Android.App.Application.Context;
+        TiktokStreakSaver.Platforms.Android.StreakRiskScheduler.ScheduleNext(context);
+#endif
     }
 
     private async void OnAboutClicked(object? sender, EventArgs e)

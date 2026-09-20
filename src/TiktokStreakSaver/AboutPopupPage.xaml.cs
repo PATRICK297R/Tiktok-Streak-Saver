@@ -401,6 +401,35 @@ blockquote{{
         return text;
     }
 
+    // ── Modal dismissal ────────────────────────────────────────────────────
+    //
+    // The popup is presented with Navigation.PushModalAsync from the page underneath, so it can end
+    // up on either this page's navigation stack or Shell's, depending on which navigation proxy
+    // handled the push. Popping only one of them leaves the popup on screen. Failures are reported
+    // rather than swallowed so callers can leave their buttons usable instead of stranding the user
+    // on a popup whose only action does nothing.
+    //
+    /// <summary>Closes this popup. Returns false when it could not be dismissed.</summary>
+    private async Task<bool> TryCloseAsync()
+    {
+        try
+        {
+            INavigation? owner = Navigation.ModalStack.Contains(this) ? Navigation : Shell.Current?.Navigation;
+
+            // Not on either stack (stale bookkeeping): still attempt the normal path so the popup
+            // is not left stranded, and let the exception path report the outcome.
+            owner ??= Navigation;
+
+            await owner.PopModalAsync();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[StreakSaver] About popup could not be dismissed: {ex}");
+            return false;
+        }
+    }
+
     // ── Onboarding / Welcome: Continue button ──────────────────────────────
     private async void OnCloseClicked(object sender, EventArgs e)
     {
@@ -409,7 +438,10 @@ blockquote{{
 
         Preferences.Default.Set("LastAppVersionSeen", _assignedVersion);
 
-        try { await Navigation.PopModalAsync(); } catch { }
+        // Re-arm the button when the dismissal failed. Leaving _isClosing set would make every
+        // later tap a no-op, so the only way out was to kill the app.
+        if (!await TryCloseAsync())
+            _isClosing = false;
     }
 
     // ── Update: Later button ───────────────────────────────────────────────
@@ -420,7 +452,8 @@ blockquote{{
 
         Preferences.Default.Set("LastRemoteVersionSeen", _assignedVersion);
 
-        try { await Navigation.PopModalAsync(); } catch { }
+        if (!await TryCloseAsync())
+            _isClosing = false;
     }
 
     // ── Update: Install button ─────────────────────────────────────────────
@@ -432,7 +465,7 @@ blockquote{{
         var url = _apkDownloadUrl ?? "https://github.com/Jon2G/TiktokStreakSaver/releases/latest";
         await Launcher.OpenAsync(url);
         Preferences.Default.Set("LastRemoteVersionSeen", _assignedVersion);
-        try { await Navigation.PopModalAsync(); } catch { }
+        await TryCloseAsync();
         return;
 #endif
 
@@ -485,7 +518,7 @@ blockquote{{
         TriggerApkInstall(apkPath);
 
         // Close popup after handing off to the system installer
-        try { await Navigation.PopModalAsync(); } catch { }
+        await TryCloseAsync();
     }
 
     private void ShowDownloadError()

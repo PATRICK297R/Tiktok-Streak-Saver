@@ -25,6 +25,10 @@ public class BootReceiver : BroadcastReceiver
             {
                 StreakScheduler.ScheduleNextRun(context);
             }
+
+            // Independent of the run schedule: a reboot clears every alarm, and the late-day warning
+            // is useful even when automation is off (the user may be sending messages by hand).
+            StreakRiskScheduler.ScheduleNext(context);
         }
     }
 }

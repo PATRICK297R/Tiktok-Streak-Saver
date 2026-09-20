@@ -16,9 +16,26 @@
 		<!-- App Identifier -->
 		<ApplicationId>com.jon2g.tiktokstreaksaver</ApplicationId>
 
-		<!-- Versions -->
-		<ApplicationDisplayVersion>0.0.5</ApplicationDisplayVersion>
-		<ApplicationVersion>5</ApplicationVersion>
+		<!--
+			Versions.
+
+			These are the defaults used by local and IDE builds. The release workflows
+			(.github/workflows/android-release.yml and ios-release.yml) override BOTH values
+			from the pushed git tag, so a tag release never depends on what is written here:
+
+			  tag v2.1.9     -> ApplicationDisplayVersion 2.1.9, ApplicationVersion 20109
+			  tag ios-v0.1.5 -> ApplicationDisplayVersion 0.1.5, ApplicationVersion 105
+
+			Both workflows derive the build number from the tag as
+			major * 10000 + minor * 100 + patch, so it always increases and the Android and
+			iOS release lines can never collide.
+
+			Keep this in sync with the newest Android release. AppInfo.Current.VersionString
+			reads this value, and ProfilePage/DashboardPage use it for the in-app update check,
+			so a stale default makes local builds report a version no release matches.
+		-->
+		<ApplicationDisplayVersion>2.1.9</ApplicationDisplayVersion>
+		<ApplicationVersion>20109</ApplicationVersion>
 
 		<!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
 		<WindowsPackageType>None</WindowsPackageType>

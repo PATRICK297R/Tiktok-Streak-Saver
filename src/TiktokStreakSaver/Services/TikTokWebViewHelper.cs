@@ -17,21 +17,46 @@ public static class TikTokWebViewHelper
         public bool IsValidUrl { get; set; }
     }
 
-    /// <summary>Stop loading and release the login WebView so TikTok video/audio does not continue in the background.</summary>
+    /// <summary>
+    /// Stop loading and release the login WebView so TikTok video/audio does not continue in the background.
+    /// <para>
+    /// This is best-effort cleanup that runs while the page owning the WebView is being removed, so it
+    /// never throws. It deliberately does NOT call <c>webView.Handler.DisconnectHandler()</c>: MAUI owns
+    /// the handler lifetime and disconnecting a handler whose platform view is still attached to the live
+    /// visual tree leaves the native <c>Android.Webkit.WebView</c> orphaned (it is then never destroyed or
+    /// cleaned up when the page is popped). That manual disconnect is what crashed the app right after a
+    /// successful login.
+    /// </para>
+    /// </summary>
     public static void TearDownLoginWebView(WebView webView)
     {
 #if ANDROID
         MainThread.BeginInvokeOnMainThread(() =>
         {
-            if (webView.Handler?.PlatformView is Android.Webkit.WebView awv)
+            try
             {
-                awv.StopLoading();
-                awv.OnPause();
-                awv.PauseTimers();
-                awv.LoadUrl("about:blank");
+                // Persist the session cookies produced by the login before the WebView goes away;
+                // otherwise the in-memory CookieManager contents can be lost with the WebView.
+                FlushCookies();
+
+                if (webView.Handler?.PlatformView is Android.Webkit.WebView awv)
+                {
+                    awv.StopLoading();
+                    awv.OnPause();
+
+                    // NOTE: deliberately not calling awv.PauseTimers() here. PauseTimers() is a global
+                    // request that pauses layout, parsing and JavaScript timers for EVERY WebView in the
+                    // process - including the headless automation WebView owned by StreakService - and
+                    // ResumeTimers() is never called anywhere, which would leave that WebView frozen.
+                    awv.LoadUrl("about:blank");
+                }
+
+                webView.Source = null;
             }
-            webView.Source = null;
-            webView.Handler?.DisconnectHandler();
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Login WebView teardown failed: {ex}");
+            }
         });
 #elif IOS
         Platforms.iOS.Services.IosWebViewConfigurator.TearDownLoginWebView(webView);

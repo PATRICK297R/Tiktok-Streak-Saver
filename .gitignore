@@ -413,3 +413,6 @@ FodyWeavers.xsd
 *.idea/
 .cursor/
 .DS_Store
+# .NET test results
+TestResults/
+*.trx

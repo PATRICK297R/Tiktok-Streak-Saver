@@ -5,6 +5,7 @@
     var userName = '[UserName]';
     var message = '[Message]';
     var isGroup = '[IsGroup]' === 'true';
+    var dryRun = '[DryRun]' === 'true';
     var found = false;
     var chatIndex = 0;
     var chatItems = [];
@@ -476,16 +477,39 @@
     var sendMessageViaButton = function () {
         var messageInput = findMessageInput();
 
-        if (messageInput) {
-            log('[CHAT] Found message input, typing...');
-            typeMessage(messageInput, function () {
-                sendMessage(messageInput);
-                setTimeout(reportSuccess, 1000);
-            });
-        } else {
+        if (!messageInput) {
             log('[CHAT] Message input NOT found on page');
             reportError('Message input not found');
+            return;
         }
+
+        if (dryRun) {
+            log('[DRYRUN] Chat reachable - no message sent');
+            reportSuccess();
+            return;
+        }
+
+        log('[CHAT] Found message input, typing...');
+        typeMessage(messageInput, function () {
+            sendMessage(messageInput);
+
+            setTimeout(function () {
+                var confirmed = false;
+                try {
+                    var remaining = (messageInput.textContent || '').trim();
+                    confirmed = remaining.length === 0;
+                    log('[VERIFY] Composer after send: len=' + remaining.length + ' -> ' + (confirmed ? 'confirmed' : 'unverified'));
+                } catch (e) {
+                    log('[VERIFY] Could not read composer after send: ' + e.message);
+                }
+
+                if (typeof StreakApp !== 'undefined') {
+                    StreakApp.reportVerification(confirmed);
+                }
+
+                reportSuccess();
+            }, 1500);
+        });
     };
 
     var searchForUserInCurrentChat = function () {

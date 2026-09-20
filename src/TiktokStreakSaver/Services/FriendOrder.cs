@@ -1,0 +1,78 @@
+namespace TiktokStreakSaver.Services;
+
+using TiktokStreakSaver.Models;
+
+/// <summary>
+/// Reordering rules for the streak send queue.
+/// <para>
+/// The order entries are messaged in is simply their order in the saved friends list: the Android
+/// runner walks an index through the enabled entries one at a time, and the iOS runner reads the same
+/// list. There is deliberately <em>no</em> separate "sort order" field, because a field and an array
+/// position would be two sources of truth for one fact - the same kind of drift that made the
+/// Activity page disagree with the Dashboard about the last run.
+/// </para>
+/// <para>
+/// Moves skip over disabled entries so that every move changes what the user sees. Swapping with a
+/// disabled neighbour would reorder the underlying list without changing the queue, and the button
+/// would look broken.
+/// </para>
+/// <para>
+/// Kept free of MAUI and Android dependencies so it can be unit tested directly.
+/// </para>
+/// </summary>
+[Microsoft.Maui.Controls.Internals.Preserve(AllMembers = true)]
+public static class FriendOrder
+{
+    /// <summary>
+    /// The entries that will actually be messaged, in the order they will be messaged. This is what
+    /// the "Send order" list shows, and what the runner walks.
+    /// </summary>
+    public static List<FriendConfig> SendQueue(IEnumerable<FriendConfig>? all) =>
+        all is null
+            ? new List<FriendConfig>()
+            : all.Where(f => f is not null && f.IsEnabled).ToList();
+
+    /// <summary>How many enabled entries there are, without building a list.</summary>
+    public static int CountInQueue(IEnumerable<FriendConfig>? all) =>
+        all?.Count(f => f is not null && f.IsEnabled) ?? 0;
+
+    /// <summary>
+    /// Moves an entry one place earlier in the send queue, past the nearest enabled entry above it.
+    /// Returns false when it is already first (or not found, or disabled), so the caller can leave the
+    /// button disabled rather than silently doing nothing.
+    /// </summary>
+    public static bool TryMoveUp(List<FriendConfig>? all, string? id) =>
+        TryMove(all, id, forward: false);
+
+    /// <summary>
+    /// Moves an entry one place later in the send queue, past the nearest enabled entry below it.
+    /// Returns false when it is already last (or not found, or disabled).
+    /// </summary>
+    public static bool TryMoveDown(List<FriendConfig>? all, string? id) =>
+        TryMove(all, id, forward: true);
+
+    private static bool TryMove(List<FriendConfig>? all, string? id, bool forward)
+    {
+        if (all is null || string.IsNullOrEmpty(id))
+            return false;
+
+        var from = all.FindIndex(f => f is not null && f.Id == id);
+
+        // Only enabled entries are in the queue, so only those can be moved.
+        if (from < 0 || !all[from].IsEnabled)
+            return false;
+
+        var step = forward ? 1 : -1;
+
+        for (var target = from + step; target >= 0 && target < all.Count; target += step)
+        {
+            if (!all[target].IsEnabled)
+                continue;
+
+            (all[target], all[from]) = (all[from], all[target]);
+            return true;
+        }
+
+        return false;
+    }
+}
