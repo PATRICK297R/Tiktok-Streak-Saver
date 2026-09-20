@@ -14,8 +14,13 @@
 // sees progress rather than waiting blind, and a scanner that stopped can be told
 // apart from one that never ran at all.
 (function () {
-    // Re-injection must not restart a scan that is already running.
-    if (window.__saverScan && !window.__saverScan.done) return;
+    // A live scanner keeps its heartbeat fresh, and re-injection must not restart one. A scanner
+    // that has gone quiet is treated as dead and replaced instead of blocking the re-injection:
+    // returning unconditionally is what made a stalled scan impossible to revive, because the app
+    // kept sending the script and the script kept ignoring it.
+    var LIVE_WINDOW_MS = 10000;
+    var previous = window.__saverScan;
+    if (previous && !previous.done && (Date.now() - (previous.heartbeatAt || 0)) < LIVE_WINDOW_MS) return;
 
     var scan = window.__saverScan = {
         done: false,
@@ -23,7 +28,9 @@
         attempts: 0,
         log: [],
         url: location.href,
-        ua: navigator.userAgent
+        ua: navigator.userAgent,
+        heartbeatAt: Date.now(),
+        diag: null
     };
 
     // How long to wait after opening a chat for its header to show the new one.
@@ -52,6 +59,7 @@
         try {
             scan.url = location.href;
             scan.ua = navigator.userAgent;
+            scan.heartbeatAt = Date.now();
 
             if (typeof SaverScan !== 'undefined' && SaverScan && SaverScan.report) {
                 SaverScan.report(JSON.stringify(scan));
@@ -66,6 +74,20 @@
         if (scan.log.length > 60) scan.log.shift();
         push();
     };
+
+    // Failures inside the page are reported rather than swallowed.
+    //
+    // A script that dies on an error leaves no trace otherwise, and the app cannot tell that apart
+    // from a page that simply has no conversations in it - which is the confusion that made this
+    // take several rounds to pin down.
+    window.addEventListener('error', function (e) {
+        log('page error: ' + (e && e.message ? e.message : 'unknown'));
+    });
+
+    window.addEventListener('unhandledrejection', function (e) {
+        var reason = e && e.reason;
+        log('page rejection: ' + (reason && reason.message ? reason.message : reason));
+    });
 
     // Reported before anything else is touched, so that "the script is running" is established
     // immediately. If it never arrives, the problem is the injection itself and not the page.
@@ -107,6 +129,49 @@
             document.querySelector('[class*="ChatHeader"]') ||
             document.querySelector('[class*="chatHeader"]') ||
             document.querySelector('[class*="DivChatHeader"]');
+    };
+
+    // What the page actually contains, reported so a scan that finds nothing can say why.
+    //
+    // The viewport is the first thing to check: TikTok picks its layout from the viewport width, so
+    // a narrow one means the mobile layout, whose conversation rows do not match these selectors.
+    // Without this the only symptom is "0 found", which is the same for a wrong layout, a renamed
+    // selector and a genuinely empty inbox.
+    var countAll = function (selector) {
+        try { return document.querySelectorAll(selector).length; } catch (e) { return -1; }
+    };
+
+    var describePage = function () {
+        var e2e = [];
+        try {
+            var nodes = document.querySelectorAll('[data-e2e]');
+            for (var i = 0; i < nodes.length && e2e.length < 8; i++) {
+                var value = nodes[i].getAttribute('data-e2e');
+                if (value && e2e.indexOf(value) === -1) e2e.push(value);
+            }
+        } catch (e) { }
+
+        scan.diag = {
+            viewport: window.innerWidth + 'x' + window.innerHeight,
+            dpr: window.devicePixelRatio,
+            dmItems: countAll("[data-e2e*='dm-new-conversation-item']"),
+            chatListItems: countAll("[data-e2e*='chat-list-item']"),
+            chatItems: countAll("[data-e2e*='chat-item']"),
+            profileLinks: countAll('a[href*="/@"]'),
+            editable: countAll('[contenteditable]'),
+            e2e: e2e.join(', ')
+        };
+
+        return scan.diag;
+    };
+
+    // Reported once, right after the first look at the page.
+    var reportPageShape = function () {
+        var d = describePage();
+        log('page: viewport=' + d.viewport + ' dpr=' + d.dpr
+            + ' dmItems=' + d.dmItems + ' chatListItems=' + d.chatListItems
+            + ' chatItems=' + d.chatItems + ' profileLinks=' + d.profileLinks);
+        log('data-e2e seen: ' + (d.e2e || '(none)'));
     };
 
 
@@ -167,7 +232,14 @@
         if (items.length === 0) {
             // Nothing rendered yet. The inbox builds its list lazily, so this is normal at first
             // and must not be read as an empty inbox.
-            if (Date.now() - startedAt > WAIT_FOR_LIST_MS) { finish('no conversation rows appeared'); return; }
+            if (scan.attempts === 0 && !scan.diag) reportPageShape();
+
+            if (Date.now() - startedAt > WAIT_FOR_LIST_MS) {
+                reportPageShape();
+                finish('no conversation rows appeared');
+                return;
+            }
+
             schedule();
             return;
         }

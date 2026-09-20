@@ -33,6 +33,9 @@ public partial class ImportContactsPage : ContentPage
     private DateTime _lastReportAt;
     private int _stallCount;
 
+    /// <summary>The scanner's most recent log line, so only new ones are copied into the app log.</summary>
+    private string _lastScriptLog = string.Empty;
+
     /// <summary>
     /// Every chat reported so far, kept here rather than in the page.
     /// <para>
@@ -150,7 +153,11 @@ public partial class ImportContactsPage : ContentPage
         if (platformView is null)
             return;
 
-        TikTokWebViewHelper.ConfigureAndroidWebView(platformView, ResolveUserAgent());
+        // The scanner needs the wide viewport, not just the desktop user agent: TikTok picks its
+        // layout from the viewport width, so a phone-width WebView is served the mobile layout whose
+        // conversation rows the selectors do not match. This is why the inbox was on screen and the
+        // scan still found nothing.
+        TikTokWebViewHelper.ConfigureAndroidScannerWebView(platformView, ResolveUserAgent());
         EnsureJsInterface(platformView);
 #else
         if (ScanWebView.Handler is null)
@@ -352,6 +359,17 @@ public partial class ImportContactsPage : ContentPage
         Accumulate(scan);
 
         UpdateScanStatus(scan);
+
+        // The scanner's own log lines are copied into the app's log, because that is what carries
+        // the diagnostics - the page shape, the viewport, and any error thrown inside the page.
+        // Without this they would stay in the page and never reach an exportable file.
+        var scriptLine = scan.Log.Count > 0 ? scan.Log[^1] : string.Empty;
+        if (scriptLine.Length > 0 && scriptLine != _lastScriptLog)
+        {
+            _lastScriptLog = scriptLine;
+            LogDiagnostic($"reader: {scriptLine}");
+        }
+
         LogDiagnostic($"scan report: {scan.Attempts} opened, {_accumulated.Count} known, done={scan.Done}");
 
         if (scan.Done)

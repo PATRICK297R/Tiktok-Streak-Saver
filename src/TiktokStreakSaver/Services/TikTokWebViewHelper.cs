@@ -95,6 +95,26 @@ public static class TikTokWebViewHelper
         cookieManager?.SetAcceptThirdPartyCookies(webView, true);
     }
 
+    /// <summary>
+    /// Configures a WebView for reading TikTok's inbox.
+    /// <para>
+    /// The wide viewport is the whole reason this exists separately from
+    /// <see cref="ConfigureAndroidWebView"/>. A desktop user agent is not enough on its own: the
+    /// layout TikTok serves follows the viewport width, so a WebView only as wide as the phone gets
+    /// the mobile layout even with a desktop agent, and the conversation rows in that layout do not
+    /// match the selectors the sending flow relies on. The result is a page where the list is
+    /// plainly on screen and the scanner still finds nothing. StreakService has always forced this;
+    /// the importer did not.
+    /// </para>
+    /// </summary>
+    public static void ConfigureAndroidScannerWebView(Android.Webkit.WebView webView, string? customUserAgent)
+    {
+        ConfigureAndroidWebView(webView, customUserAgent);
+
+        webView.Settings.UseWideViewPort = true;
+        webView.Settings.LoadWithOverviewMode = true;
+    }
+
     public static void FlushCookies() => Android.Webkit.CookieManager.Instance?.Flush();
 
     public static bool HasValidSessionCookie()
