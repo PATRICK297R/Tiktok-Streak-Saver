@@ -398,7 +398,7 @@
     var namelessPerson = function () {
         var header = findHeader();
         if (!header) return null;
-        if (groupReason(header, distinctProfileLinks(header), '', '')) return null;
+        if (groupReason(header, distinctProfileLinks(header))) return null;
 
         var username = usernameFrom(headerProfileLink(header));
         if (!isUsableUsername(username)) return null;
@@ -529,24 +529,37 @@
     // after opening a single chat while still looking alive - which is what shipped from 2.1.14
     // through 2.1.18, and why the import never recorded a single chat.
 
-    // A group's header does link to an account - which is not what was expected, and is why groups
-    // still came through as friends. What gives a group away is the handle behind that link: TikTok
-    // builds it out of the group's name, so "Humas SMKN 1 TROWULAN" is filed under
-    // "humas.smkn.1.trow" and "FIVE MULTIPLE|SEASON 6" under "five.multiple". A person's handle is
-    // chosen by them and does not spell out their display name.
+    // A chat is a group when its header has no single account to link to.
     //
-    // That difference is the one marker here with evidence behind it: on the inbox this was found in,
-    // it held for both groups and for all twenty-two people. The other markers stay because they are
-    // things only a group can show - no link at all, several distinct links (a member stack), and a
-    // participant count such as "5 members".
+    // This is where the rule started, and this is where it has come back to. It was set aside for a
+    // while in favour of a handle that spells out the chat's name, because two rows in a device log
+    // read as groups on that basis: "Humas SMKN 1 TROWULAN" under "humas.smkn.1.trow", and
+    // "FIVE MULTIPLE|SEASON 6" under "five.multiple". They are ordinary accounts whose handles simply
+    // read that way, and their owner has no group chats at all. So the sample that appeared to
+    // disprove this rule was not a sample of groups, and the rule was never actually tested against
+    // one - the handle rule was fitted to two people.
+    //
+    // That mistake cost something, which is why it is written down here: the handle rule classified
+    // both of those accounts as groups, and it can only ever fire on a chat that links to exactly one
+    // account - the shape this rule calls a person. It was a false positive generator with nothing
+    // behind it.
+    //
+    // What is left is the one signal that comes from how the page is built rather than from a guess: a
+    // direct message is a chat with one account, so its header links to that account, while a group
+    // has no single account to link to. The other markers stay because they are things only a group
+    // can show - several distinct links (a member stack), and a participant count such as "5 members".
     //
     // A class name mentioning group or member is reported by headerFacts but decides nothing, and so
     // is the number of pictures in the header, which is the marker detect_groups.js used. Neither has
-    // been seen on a real header yet, and both can only be trusted once the log says so: a class like
-    // "member-avatar" on a direct message would turn every friend into a group at once. Where the
-    // markers disagree the answer is "group", because a group filed as a person is looked up by the
-    // handle that was read off it, so the app would open some member's chat instead of the group,
-    // while a person filed as a group is still found by name.
+    // been seen on a real group header yet, and both can only be trusted once the log says so: a class
+    // like "member-avatar" on a direct message would turn every friend into a group at once.
+    //
+    // The remaining risk is stated plainly, because it is real: a group whose header does link to one
+    // account would be read as a person, and the app would send to that account's chat rather than to
+    // the group. Confirming which way that goes needs a group header in a log, and there has not been
+    // one yet. Until then the import list is what corrects it - a row can be switched to a group by
+    // hand, which is a correction, where the handle rule produced two wrong rows per twenty-four on
+    // the only real inbox it was tried against.
     var GROUP_CLASSES = '[class*="group"], [class*="Group"], [class*="member"], [class*="Member"]';
     var MEMBER_COUNT = /(\d+)\s*(members|member|anggota|peserta|participants|participant|orang)/i;
 
@@ -653,45 +666,6 @@
         return !!username && !/[\s@\/]/.test(username);
     };
 
-    // Whether the handle spells out the chat's name, which is what a group's handle is.
-    //
-    // TikTok builds it from the name: "FIVE MULTIPLE|SEASON 6" is filed under "five.multiple", and
-    // "Humas SMKN 1 TROWULAN" under "humas.smkn.1.trow" - cut off part-way through the last word, which
-    // is why the last word is allowed to match only at its start. A person's handle is chosen by them,
-    // so it does not spell out their display name.
-    //
-    // Two words are required, and a name with no space is left alone: a person's display name is very
-    // often their handle already - "kenpanzz" is a person whose handle is "kenpanzz" - while one word
-    // of a longer name is too little to go on, since "Ken Panzz" under the handle "ken" would
-    // otherwise read as a group.
-    var looksGeneratedFromName = function (name, username) {
-        if (!name || !username) return false;
-        if (name.indexOf(' ') === -1) return false;
-
-        var words = slugOf(name).split('.');
-        var parts = slugOf(username).split('.');
-        if (parts.length < 2 || parts.length > words.length) return false;
-
-        for (var i = 0; i < parts.length; i++) {
-            if (!parts[i]) return false;
-            if (words[i] === parts[i]) continue;
-
-            // The last one may be cut short, and only the last one: "humas.smkn.1.trow" is the start of
-            // "humas.smkn.1.trowulan", while a shortened word in the middle would have to be followed
-            // by a word that still matches.
-            if (i === parts.length - 1 && words[i].indexOf(parts[i]) === 0) continue;
-
-            return false;
-        }
-
-        return true;
-    };
-
-    // A name or handle reduced to lowercase words joined by dots, so the two can be compared.
-    var slugOf = function (value) {
-        return value.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '');
-    };
-
     // The header's own text: the person's display name, or the group's chat name.
     var headerName = function (header) {
         var lines = (header.innerText || '').split('\n');
@@ -704,11 +678,10 @@
     };
 
     // Why this header looks like a group, or empty when it looks like a person.
-    var groupReason = function (header, linkCount, name, username) {
+    var groupReason = function (header, linkCount) {
         if (linkCount === 0) return 'no profile link';
         if (linkCount > 1) return 'member stack';
         if (MEMBER_COUNT.test(text(header))) return 'participant count';
-        if (looksGeneratedFromName(name, username)) return 'handle built from the name';
         return '';
     };
 
@@ -725,10 +698,11 @@
         // contact called "@".
         if (!isUsableName(name)) return null;
 
-        // The header's own link is read whatever the chat turns out to be, because for a group it is
-        // what gives the type away: the handle behind it is built from the group's name.
+        // The header's own link is read whatever the chat turns out to be, because a person is filed
+        // under it - and because it is the count of these that says whether there is one account to
+        // link to, which is what separates a direct message from a group.
         var username = usernameFrom(headerProfileLink(header));
-        var reason = groupReason(header, distinctProfileLinks(header), name, username);
+        var reason = groupReason(header, distinctProfileLinks(header));
         if (reason) return { username: '', displayName: name, isGroup: true, reason: reason };
 
         // No group marker, so the header's link has to name the person.

@@ -5,7 +5,8 @@
 // file says nothing about the scope it lives in or the call it makes, so this executes the thing.
 //
 // The scenarios are the failures that reached a device: a header still showing a bare "@" while the
-// account loads, and a group whose header links to one of its members.
+// account loads, a scan that read the same chats again after the list scrolled, and two accounts whose
+// handles spell out their display names - which were read as groups for a while, and are not groups.
 //
 // Usage: node scanner_harness.js <path to tiktok_read_contacts.js>
 //
@@ -63,40 +64,49 @@ const scenarios = [
         chats: [
             { name: 'Alice', links: ['/@alice'] },
             { name: 'Weekend Crew', links: [] },
-            { name: 'FIVE MULTIPLE|SEASON 6', links: ['/@member1', '/@member2'] },
-            { name: 'Humas SMKN 1 TROWULAN', links: ['/@humas'], memberText: '5 members' },
-            // A person whose display name is not their handle. The name has a space in it, so this is
-            // the shape a group's generated handle has - but the handle is nothing like the name, and
-            // reading it as a group is the false positive that would hurt.
+            { name: 'Band Practice', links: ['/@member1', '/@member2'] },
+            { name: 'Class of 2027', links: ['/@one_member'], memberText: '5 members' },
+            // A person whose display name is not their handle. The name has a space in it, which a rule
+            // that read handles as generated from names used to call a group - see the next scenario,
+            // which is where that rule was caught doing it to two real accounts.
             { name: 'Rasya RaisKuker', links: ['/@virkun01'] }
         ],
         expected: [
             { displayName: 'Alice', isGroup: false, username: 'alice' },
             { displayName: 'Weekend Crew', isGroup: true },
-            { displayName: 'FIVE MULTIPLE|SEASON 6', isGroup: true },
-            { displayName: 'Humas SMKN 1 TROWULAN', isGroup: true },
+            { displayName: 'Band Practice', isGroup: true },
+            { displayName: 'Class of 2027', isGroup: true },
             { displayName: 'Rasya RaisKuker', isGroup: false, username: 'virkun01' }
         ]
     },
     {
-        // Taken from the device log, where these two were imported as friends. Their headers each
-        // hold one profile link and nothing else to go on: no member stack, no participant count.
-        // What they share is the handle, which is the group's name spelled out - truncated, in the
-        // first case, exactly as TikTok truncates it.
-        title: 'the two groups from the device log, recognised by their generated handle',
+        // The two rows that were read as groups for a while, and are not groups at all.
+        //
+        // Both are ordinary accounts whose handles happen to spell out their display names -
+        // "humas.smkn.1.trow" for "Humas SMKN 1 TROWULAN", "five.multiple" for "FIVE MULTIPLE|SEASON 6".
+        // Their owner has no group chats: they checked both accounts and neither is one. A rule that
+        // reads a spelled-out handle as a group therefore put two wrong rows into every import of this
+        // inbox, and this scenario pins the opposite answer. One profile link is a person.
+        title: 'accounts whose handle spells out their name are still people',
         chats: [
             { name: 'Humas SMKN 1 TROWULAN', links: ['/@humas.smkn.1.trow'] },
             { name: 'FIVE MULTIPLE|SEASON 6', links: ['/@five.multiple'] }
         ],
         expected: [
-            { displayName: 'Humas SMKN 1 TROWULAN', isGroup: true },
-            { displayName: 'FIVE MULTIPLE|SEASON 6', isGroup: true }
+            { displayName: 'Humas SMKN 1 TROWULAN', isGroup: false, username: 'humas.smkn.1.trow' },
+            { displayName: 'FIVE MULTIPLE|SEASON 6', isGroup: false, username: 'five.multiple' }
         ]
     },
     {
-        // The whole inbox from the device log, exactly as it was reported: twenty-two people and two
-        // groups. Every handle here was read off a real header, which makes this the closest thing to
-        // a real run that can be had without a device - and the pair that started this is in it.
+        // The whole inbox from the device log, exactly as it was reported: twenty-four people and no
+        // groups at all. Every handle here was read off a real header, which makes this the closest
+        // thing to a real run that can be had without a device.
+        //
+        // It was read as twenty-two people and two groups for a while, and the two were the whole
+        // reason a handle rule was invented: their handles spell out their names, and that looked like
+        // the one difference between a group and a person. They are accounts, so the count was wrong
+        // and the rule was fitted to them. Both stay in this scenario as people, which is what makes it
+        // the guard against that rule coming back.
         title: 'the whole inbox from the device log',
         chats: [
             { name: 'munchkie', links: ['/@vkyardians'] },
@@ -136,7 +146,7 @@ const scenarios = [
             { displayName: 'Rasya RaisKuker', isGroup: false, username: 'virkun01' },
             { displayName: 'aryaaaaa612', isGroup: false, username: 'aryaaaaa612' },
             { displayName: 'padil pedil hy', isGroup: false, username: 'fadhiel_mahen' },
-            { displayName: 'Humas SMKN 1 TROWULAN', isGroup: true },
+            { displayName: 'Humas SMKN 1 TROWULAN', isGroup: false, username: 'humas.smkn.1.trow' },
             { displayName: 'snowb\ud83c\udf35', isGroup: false, username: 'suanz07' },
             { displayName: 'Zyou', isGroup: false, username: 'huzyou' },
             { displayName: 'rap', isGroup: false, username: 'rapreprapraprep' },
@@ -150,7 +160,7 @@ const scenarios = [
             { displayName: 'Bayu6852', isGroup: false, username: 'bayu6852' },
             { displayName: 'trayyv', isGroup: false, username: 'knethgr' },
             { displayName: 'Qizi~huono', isGroup: false, username: 'qizicihuy8' },
-            { displayName: 'FIVE MULTIPLE|SEASON 6', isGroup: true },
+            { displayName: 'FIVE MULTIPLE|SEASON 6', isGroup: false, username: 'five.multiple' },
             { displayName: 'sniie', isGroup: false, username: 'agnieputraa' },
             { displayName: 'Fadhil', isGroup: false, username: 'lo.masfadhil' }
         ]

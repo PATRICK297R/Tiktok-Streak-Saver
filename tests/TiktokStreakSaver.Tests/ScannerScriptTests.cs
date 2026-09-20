@@ -56,11 +56,13 @@ public class ScannerScriptTests
             Assert.DoesNotContain("FAILED", result.Value.Output);
 
             // The failures that reached a device, named here so they are visible in this file: a group
-            // must stay a group, a header that is still loading must not be recorded as "@", and a name
-            // of invisible filler must not become a contact with no name.
+            // must stay a group, a header that is still loading must not be recorded as "@", a name of
+            // invisible filler must not become a contact with no name, and an account whose handle
+            // spells out its name must stay a person - reading those as groups is what put two wrong
+            // rows into an import of an inbox with no groups in it.
             Assert.Contains("CHAT @alice \"Alice\"", result.Value.Output);
             Assert.Contains("CHAT group \"Weekend Crew\"", result.Value.Output);
-            Assert.Contains("CHAT group \"Humas SMKN 1 TROWULAN\"", result.Value.Output);
+            Assert.Contains("CHAT @humas.smkn.1.trow \"Humas SMKN 1 TROWULAN\"", result.Value.Output);
             Assert.Contains("CHAT @xznsenpai \"xznsenpai\"", result.Value.Output);
         }
         finally
@@ -117,8 +119,6 @@ public class ScannerScriptTests
     [InlineData("isBlankChar")]
     [InlineData("isUsableName")]
     [InlineData("isUsableUsername")]
-    [InlineData("slugOf")]
-    [InlineData("looksGeneratedFromName")]
     [InlineData("headerName")]
     [InlineData("groupReason")]
     [InlineData("identifyOpenChat")]
