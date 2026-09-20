@@ -30,6 +30,7 @@
         url: location.href,
         ua: navigator.userAgent,
         heartbeatAt: Date.now(),
+        listFound: false,
         diag: null
     };
 
@@ -75,12 +76,15 @@
         push();
     };
 
-    // Failures inside the page are reported rather than swallowed.
+    // Failures inside the page are reported rather than swallowed, and they carry the page shape
+    // with them.
     //
     // A script that dies on an error leaves no trace otherwise, and the app cannot tell that apart
     // from a page that simply has no conversations in it - which is the confusion that made this
-    // take several rounds to pin down.
+    // take several rounds to pin down. The shape is attached because an error is the moment its
+    // viewport and selectors matter most.
     window.addEventListener('error', function (e) {
+        try { reportPageShape('at the error'); } catch (ignore) { }
         log('page error: ' + (e && e.message ? e.message : 'unknown'));
     });
 
@@ -165,13 +169,15 @@
         return scan.diag;
     };
 
-    // Reported once, right after the first look at the page.
-    var reportPageShape = function () {
+    // Reported with the moment it was taken, because the answer is only meaningful once the list has
+    // had a chance to render. Taken too early it describes an empty page and reads like a page whose
+    // selectors do not match - which is how a working viewport got blamed for a broken script.
+    var reportPageShape = function (when) {
         var d = describePage();
-        log('page: viewport=' + d.viewport + ' dpr=' + d.dpr
+        log('page shape ' + when + ': viewport=' + d.viewport + ' dpr=' + d.dpr
             + ' dmItems=' + d.dmItems + ' chatListItems=' + d.chatListItems
             + ' chatItems=' + d.chatItems + ' profileLinks=' + d.profileLinks);
-        log('data-e2e seen: ' + (d.e2e || '(none)'));
+        log('data-e2e ' + when + ': ' + (d.e2e || '(none)'));
     };
 
 
@@ -232,16 +238,25 @@
         if (items.length === 0) {
             // Nothing rendered yet. The inbox builds its list lazily, so this is normal at first
             // and must not be read as an empty inbox.
-            if (scan.attempts === 0 && !scan.diag) reportPageShape();
+            if (scan.attempts === 0 && !scan.diag) reportPageShape('before the list');
 
             if (Date.now() - startedAt > WAIT_FOR_LIST_MS) {
-                reportPageShape();
+                reportPageShape('when giving up');
                 finish('no conversation rows appeared');
                 return;
             }
 
             schedule();
             return;
+        }
+
+        // Said once, as soon as the list is there. Without it a scan that works looks the same in the
+        // log as one that never got past an empty page, because the only shape ever reported was the
+        // one taken while the page was still blank.
+        if (!scan.listFound) {
+            scan.listFound = true;
+            log('list ready: ' + items.length + ' rows');
+            reportPageShape('with the list');
         }
 
         if (chatIndex >= items.length) {
@@ -261,20 +276,44 @@
         setTimeout(afterOpen, OPEN_WAIT_MS);
     };
 
+    // Runs from a timer, so it needs its own guard. step() has a try/catch, but that only covers the
+    // synchronous part: an error thrown here escapes to window.onerror and leaves the timer chain
+    // dead, so the scan stops after opening one chat and still looks like it is working. That is
+    // exactly how a broken helper went unnoticed for four releases - the only trace was a stall.
     var afterOpen = function () {
-        var entry = identifyOpenChat();
+        var indexBefore = chatIndex;
 
-        // A header that still shows the previous chat means the click had not taken effect yet.
-        // One retry is enough; a second failure is treated as an unreadable chat.
-        if (entry && keyOf(entry) === lastIdentifiedKey) {
-            setTimeout(function () {
-                var retry = identifyOpenChat();
-                settle(retry && keyOf(retry) === lastIdentifiedKey ? null : retry);
-            }, OPEN_WAIT_MS);
-            return;
+        try {
+            var entry = identifyOpenChat();
+
+            // A header that still shows the previous chat means the click had not taken effect yet.
+            // One retry is enough; a second failure is treated as an unreadable chat.
+            if (entry && keyOf(entry) === lastIdentifiedKey) {
+                setTimeout(function () {
+                    try {
+                        var retry = identifyOpenChat();
+                        settle(retry && keyOf(retry) === lastIdentifiedKey ? null : retry);
+                    } catch (e) {
+                        missChat('Retry failed', e, indexBefore);
+                    }
+                }, OPEN_WAIT_MS);
+                return;
+            }
+
+            settle(entry);
+        } catch (e) {
+            missChat('Open failed', e, indexBefore);
         }
+    };
 
-        settle(entry);
+    // Abandons the chat that could not be read and carries on with the next one. The index only
+    // moves when settle() did not already move it, so a failure cannot skip a chat or, worse, leave
+    // the walk stuck on the same one until the visit limit runs out.
+    var missChat = function (label, e, indexBefore) {
+        consecutiveMisses++;
+        if (chatIndex === indexBefore) chatIndex++;
+        log(label + ': ' + (e && e.message ? e.message : e));
+        schedule();
     };
 
     var lastIdentifiedKey = null;
@@ -330,9 +369,14 @@
         return true;
     };
 
-    // The first step waits for the WebView to lay the page out before looking for rows.
-    setTimeout(step, 1500);
-})();
+
+    // --- Identifying the open chat ---------------------------------------------
+    //
+    // These must stay inside this function. They close over findHeader, scan and log, none of
+    // which exist at the top level, so written after the closing brace below every call throws a
+    // ReferenceError instead. The first call happens in a timer callback, so the scan stopped
+    // after opening a single chat while still looking alive - which is what shipped from 2.1.14
+    // through 2.1.18, and why the import never recorded a single chat.
 
     // The username of the open chat, or empty when the header has no profile link - which is
     // what a group looks like. Mirrors tiktok_automation.js, including its last-resort search,
@@ -418,3 +462,7 @@
         scan.done = true;
         log('Finished: ' + scan.items.length + ' chats (' + reason + ')');
     };
+
+    // The first step waits for the WebView to lay the page out before looking for rows.
+    setTimeout(step, 1500);
+})();
