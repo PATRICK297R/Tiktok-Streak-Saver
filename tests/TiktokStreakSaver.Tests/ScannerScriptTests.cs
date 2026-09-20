@@ -39,8 +39,16 @@ public class ScannerScriptTests
         }
 
         Assert.True(result.Value.ExitCode == 0, result.Value.Output);
-        Assert.Contains("CHAT @alice", result.Value.Output);
+
+        // The harness finished rather than giving up, and nothing in it failed.
+        Assert.Contains("RESULT scenarios=", result.Value.Output);
+        Assert.DoesNotContain("FAILED", result.Value.Output);
+
+        // The two failures that reached a device, named here so they are visible in this file: a group
+        // must stay a group, and a header that is still loading must not be recorded as "@".
+        Assert.Contains("CHAT @alice \"Alice\"", result.Value.Output);
         Assert.Contains("CHAT group \"Weekend Crew\"", result.Value.Output);
+        Assert.Contains("CHAT group \"Humas SMKN 1 TROWULAN\"", result.Value.Output);
     }
 
     [Fact]
@@ -61,15 +69,41 @@ public class ScannerScriptTests
         Assert.Equal(1, prepared.Split("})();").Length - 1);
     }
 
+    [Fact]
+    public void TheBundledScannerTakesTheIdentityFromTheHeaderAlone()
+    {
+        var script = ReadScanner();
+        if (script is null)
+            return;
+
+        // A group's message pane links to the members who wrote, so searching the page for a profile
+        // link when the header has none is what gave every group a member's username and imported it
+        // as a friend. The scanner must never look outside the header for one.
+        Assert.DoesNotContain("document.querySelectorAll('a[href*=\"/@\"]')", script);
+        Assert.Contains("headerProfileLink", script);
+
+        // A header read before the account loads is a bare "@", and a chat filed under that name can
+        // never be found again.
+        Assert.Contains("isUsableName", script);
+    }
+
     [Theory]
     [InlineData("findHeader")]
-    [InlineData("headerUsername")]
+    [InlineData("headerProfileLink")]
+    [InlineData("distinctProfileLinks")]
+    [InlineData("usernameFrom")]
+    [InlineData("isUsableName")]
+    [InlineData("isUsableUsername")]
     [InlineData("headerName")]
+    [InlineData("groupReason")]
     [InlineData("identifyOpenChat")]
     [InlineData("keyOf")]
     [InlineData("finish")]
     [InlineData("settle")]
     [InlineData("record")]
+    [InlineData("readHeader")]
+    [InlineData("headerFacts")]
+    [InlineData("missChat")]
     public void TheBundledScannerDeclaresEachHelperInsideItsIife(string helper)
     {
         var script = ReadScanner();

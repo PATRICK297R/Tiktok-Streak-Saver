@@ -6,9 +6,14 @@
 // same text block, so the preview gets mistaken for a name ("sent you a sticker"), and
 // a direct message row carries no profile link either, so every row looked like a group.
 //
-// The header is authoritative: a profile link in it means a person with a real
-// username, and no profile link means a group, which the app matches by its chat name.
-// Those are the two things the sending flow needs in order to find a chat again.
+// The header is authoritative, and only the header: a profile link in it means a person with a
+// real username, and no link means a group, which the app matches by its chat name. Those are
+// the two things the sending flow needs in order to find a chat again.
+//
+// Searching the rest of the page for a link when the header has none is wrong here, even though
+// tiktok_automation.js does exactly that when sending: there the target's type is already known,
+// while here it is the thing being decided. A group's message pane links to the members who
+// wrote, so that search handed every group a member's username and imported it as a friend.
 //
 // Results are pushed to the app through SaverScan.report on every step, so the app
 // sees progress rather than waiting blind, and a scanner that stopped can be told
@@ -276,6 +281,11 @@
         setTimeout(afterOpen, OPEN_WAIT_MS);
     };
 
+    // How many times a header is read before its chat is given up on. The header fills in after the
+    // click - for a moment it shows a bare "@" with no name at all - and an identity read then is
+    // not an identity, which is how "@@" reached the contact list.
+    var MAX_HEADER_READS = 4;
+
     // Runs from a timer, so it needs its own guard. step() has a try/catch, but that only covers the
     // synchronous part: an error thrown here escapes to window.onerror and leaves the timer chain
     // dead, so the scan stops after opening one chat and still looks like it is working. That is
@@ -284,35 +294,59 @@
         var indexBefore = chatIndex;
 
         try {
-            var entry = identifyOpenChat();
-
-            // A header that still shows the previous chat means the click had not taken effect yet.
-            // One retry is enough; a second failure is treated as an unreadable chat.
-            if (entry && keyOf(entry) === lastIdentifiedKey) {
-                setTimeout(function () {
-                    try {
-                        var retry = identifyOpenChat();
-                        settle(retry && keyOf(retry) === lastIdentifiedKey ? null : retry);
-                    } catch (e) {
-                        missChat('Retry failed', e, indexBefore);
-                    }
-                }, OPEN_WAIT_MS);
-                return;
-            }
-
-            settle(entry);
+            readHeader(indexBefore, MAX_HEADER_READS);
         } catch (e) {
             missChat('Open failed', e, indexBefore);
         }
     };
 
+    // Reads the header, looking again while it is still filling in, and treating a header that has
+    // not moved on as a click that had not taken effect yet. Both are reasons to wait rather than to
+    // record something: a chat read too early is a contact under the wrong name, and one read before
+    // the click landed is the previous chat filed twice.
+    var readHeader = function (indexBefore, remaining) {
+        var entry = identifyOpenChat();
+        var stale = !!entry && keyOf(entry) === lastIdentifiedKey;
+
+        if (!entry || stale) {
+            if (remaining > 0) {
+                setTimeout(function () {
+                    try {
+                        readHeader(indexBefore, remaining - 1);
+                    } catch (e) {
+                        missChat('Read failed', e, indexBefore);
+                    }
+                }, OPEN_WAIT_MS);
+                return;
+            }
+
+            missChat(stale ? 'Header never changed' : 'Header never settled', headerFacts(), indexBefore);
+            return;
+        }
+
+        settle(entry);
+    };
+
+    // What the header looks like right now, for the log. When a chat is given up on, this is what
+    // says whether the header was empty, had no link, or was showing something else entirely - the
+    // question a bare "could not be identified" leaves unanswered.
+    var headerFacts = function () {
+        var header = findHeader();
+        if (!header) return 'no header';
+
+        return 'name="' + headerName(header).substring(0, 40) + '"'
+            + ', links=' + distinctProfileLinks(header)
+            + ', avatars=' + header.querySelectorAll('img').length
+            + ', groupClass=' + !!header.querySelector(GROUP_CLASSES);
+    };
+
     // Abandons the chat that could not be read and carries on with the next one. The index only
     // moves when settle() did not already move it, so a failure cannot skip a chat or, worse, leave
     // the walk stuck on the same one until the visit limit runs out.
-    var missChat = function (label, e, indexBefore) {
+    var missChat = function (label, detail, indexBefore) {
         consecutiveMisses++;
         if (chatIndex === indexBefore) chatIndex++;
-        log(label + ': ' + (e && e.message ? e.message : e));
+        log(label + ': ' + (detail && detail.message ? detail.message : detail));
         schedule();
     };
 
@@ -325,8 +359,12 @@
             lastIdentifiedKey = keyOf(entry);
             consecutiveMisses = 0;
             emptyScrolls = 0;
-            log('Chat ' + scan.attempts + ': ' + (entry.isGroup ? 'group "' : '@') + entry.displayName
-                + (entry.isGroup ? '"' : '') + ' (' + scan.items.length + ' total)');
+            // The name alone is not enough to check against the inbox: the username is what the app
+            // looks the chat up by, and for a group it is the reason it was filed as one.
+            log('Chat ' + scan.attempts + ': ' + (entry.isGroup
+                    ? 'group "' + entry.displayName + '" (' + entry.reason + ')'
+                    : '@' + entry.username + ' "' + entry.displayName + '"')
+                + ' (' + scan.items.length + ' total)');
         } else if (outcome === 'duplicate') {
             // Reached again through a scroll overlap, which is expected and not a failure.
             log('Chat ' + scan.attempts + ': already seen');
@@ -378,56 +416,73 @@
     // after opening a single chat while still looking alive - which is what shipped from 2.1.14
     // through 2.1.18, and why the import never recorded a single chat.
 
-    // The username of the open chat, or empty when the header has no profile link - which is
-    // what a group looks like. Mirrors tiktok_automation.js, including its last-resort search,
-    // because that is the logic that already finds chats correctly when sending.
-    var headerUsername = function () {
-        var header = findHeader();
-        if (!header) return '';
+    // A group's header names the group and links to no single account, so the header's own link is
+    // what tells a person from a group - taken from the header alone. Deliberately not a search of
+    // the page: in a group the message pane links to the members who wrote, and picking one of those
+    // up is what gave a group a member's username and imported it as a friend.
+    //
+    // Two markers are used on top of that, and both are things only a group can show: several
+    // different profile links, which is a member stack, and a participant count such as "5 members".
+    // A class name mentioning group or member is reported by headerFacts but decides nothing, because
+    // nothing here has shown that a direct message's header is free of such a class - and a wrong
+    // "group" is far cheaper than a wrong "person". A group filed as a person is looked up by one
+    // member's username, so the app would open that member's chat instead of the group, while a
+    // person filed as a group is still found by name.
+    var GROUP_CLASSES = '[class*="group"], [class*="Group"], [class*="member"], [class*="Member"]';
+    var MEMBER_COUNT = /(\d+)\s*(members|member|anggota|peserta|participants|participant|orang)/i;
 
-        var link = header.querySelector('a[href*="/@"]');
-        if (link) {
-            var href = link.getAttribute('href') || '';
-            var match = href.match(/\/@([^\/?]+)/);
-            if (match && match[1]) {
-                try {
-                    return decodeURIComponent(match[1]).trim();
-                } catch (e) {
-                    return match[1].trim();
-                }
-            }
-        }
+    var headerProfileLink = function (header) {
+        return header.querySelector('a[href*="/@"]');
+    };
 
-        // Last resort: a profile link in the conversation pane but not in the nav or the list.
-        var links = document.querySelectorAll('a[href*="/@"]');
+    // How many different accounts the header links to. One is a direct message; more than one is a
+    // member stack, which only a group has.
+    var distinctProfileLinks = function (header) {
+        var links = header.querySelectorAll('a[href*="/@"]');
+        var seenHrefs = {};
+        var count = 0;
+
         for (var i = 0; i < links.length; i++) {
-            var candidate = links[i];
-            if (candidate.closest("[data-e2e*='conversation-item']") ||
-                candidate.closest("[data-e2e*='chat-list']") ||
-                candidate.closest("[data-e2e*='dm-new-conversation']")) continue;
-            if (candidate.closest("[data-e2e*='nav-']") ||
-                candidate.closest('[data-e2e="profile-icon"]') ||
-                candidate.closest('nav')) continue;
-
-            var other = candidate.getAttribute('href') || '';
-            var otherMatch = other.match(/\/@([^\/?]+)/);
-            if (otherMatch && otherMatch[1]) {
-                try {
-                    return decodeURIComponent(otherMatch[1]).trim();
-                } catch (e) {
-                    return otherMatch[1].trim();
-                }
-            }
+            var href = links[i].getAttribute('href') || '';
+            if (!href || seenHrefs[href]) continue;
+            seenHrefs[href] = true;
+            count++;
         }
 
-        return '';
+        return count;
+    };
+
+    var usernameFrom = function (link) {
+        if (!link) return '';
+
+        var href = link.getAttribute('href') || '';
+        var match = href.match(/\/@([^\/?]+)/);
+        if (!match || !match[1]) return '';
+
+        try {
+            return decodeURIComponent(match[1]).trim();
+        } catch (e) {
+            return match[1].trim();
+        }
+    };
+
+    // Characters that carry no name: the header renders a bare "@" before the account loads, and some
+    // names are built from zero-width and placeholder characters, which would import as blank
+    // contacts.
+    var NAME_PADDING = /[\s\u200b-\u200f\u2060-\u2064\u3164\ufeff\ufffc@]/g;
+
+    var isUsableName = function (name) {
+        return !!name && name.replace(NAME_PADDING, '').length > 0;
+    };
+
+    // A handle has no space, no "@" and no slash in it. The sending flow rebuilds the chat's address
+    // from this value, so anything else could never find the chat again.
+    var isUsableUsername = function (username) {
+        return !!username && !/[\s@\/]/.test(username);
     };
 
     // The header's own text: the person's display name, or the group's chat name.
-    var headerName = function () {
-        var header = findHeader();
-        if (!header) return '';
-
+    var headerName = function (header) {
         var lines = (header.innerText || '').split('\n');
         for (var i = 0; i < lines.length; i++) {
             var line = (lines[i] || '').replace(/\s+/g, ' ').trim();
@@ -437,19 +492,35 @@
         return '';
     };
 
-    // Identifies the chat that is currently open. Null means the header is not readable yet.
+    // Why this header looks like a group, or empty when it looks like a person.
+    var groupReason = function (header, linkCount) {
+        if (linkCount === 0) return 'no profile link';
+        if (linkCount > 1) return 'member stack';
+        if (MEMBER_COUNT.test(text(header))) return 'participant count';
+        return '';
+    };
+
+    // Identifies the chat that is currently open. Null means the header has not finished filling in,
+    // which is a reason to look again rather than to record something.
     var identifyOpenChat = function () {
-        var username = headerUsername();
-        if (username) {
-            var name = headerName();
-            return { username: username, displayName: name || username, isGroup: false };
-        }
+        var header = findHeader();
+        if (!header) return null;
 
-        // No profile link in the header, so this is a group, which the app matches by name.
-        var groupName = headerName();
-        if (!groupName) return null;
+        var name = headerName(header);
 
-        return { username: '', displayName: groupName, isGroup: true };
+        // The name is checked first because it is what the chat is filed under. While the header is
+        // still filling in it is a bare "@" and nothing else, and that is what reached the list as a
+        // contact called "@".
+        if (!isUsableName(name)) return null;
+
+        var reason = groupReason(header, distinctProfileLinks(header));
+        if (reason) return { username: '', displayName: name, isGroup: true, reason: reason };
+
+        // No group marker, so the header's own link has to name the person.
+        var username = usernameFrom(headerProfileLink(header));
+        if (!isUsableUsername(username)) return null;
+
+        return { username: username, displayName: name, isGroup: false, reason: '' };
     };
 
     var keyOf = function (entry) {

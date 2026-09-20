@@ -176,8 +176,11 @@ public class ScriptPreparationTests
         // list rows show a display name and a message preview in one text block, and carry no
         // profile link for direct messages, so reading rows got the preview as a name and called
         // every direct message a group. This test exists so that cannot be reintroduced quietly.
+        //
+        // The identity is the header's own link, never a link found elsewhere on the page: see
+        // ScannerScriptTests.TheBundledScannerTakesTheIdentityFromTheHeaderAlone.
         Assert.Contains("chat-header", script);
         Assert.Contains("item.click()", script);
-        Assert.Contains("headerUsername", script);
+        Assert.Contains("headerProfileLink", script);
     }
 }
