@@ -124,6 +124,23 @@
         return 'new';
     };
 
+    // Keeps the app informed while nothing else is happening.
+    //
+    // Without this the waiting phase is completely silent: no report is sent, so the app cannot
+    // tell a scanner that is waiting for the list apart from one that has stopped running, and it
+    // sits on a stale status forever. Throttled, because the wait loop runs many times a second.
+    var HEARTBEAT_MS = 4000;
+    var lastHeartbeatAt = 0;
+
+    var heartbeat = function () {
+        var now = Date.now();
+        if (now - lastHeartbeatAt < HEARTBEAT_MS) return;
+
+        lastHeartbeatAt = now;
+        log('Working: ' + scan.attempts + ' opened, ' + scan.items.length + ' found, '
+            + Math.round((now - startedAt) / 1000) + 's elapsed');
+    };
+
     var schedule = function () {
         if (scan.done) return;
 
@@ -131,6 +148,7 @@
         if (scan.attempts >= MAX_CHATS) { finish('visit limit reached'); return; }
         if (consecutiveMisses >= MAX_CONSECUTIVE_MISSES) { finish('several chats could not be opened'); return; }
 
+        heartbeat();
         setTimeout(step, 120);
     };
 

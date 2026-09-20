@@ -30,6 +30,19 @@ public partial class ImportContactsPage : ContentPage
     private bool _isInjecting;
     private bool _isAdding;
     private bool _reportReceived;
+    private DateTime _lastReportAt;
+    private int _stallCount;
+
+    /// <summary>
+    /// Every chat reported so far, kept here rather than in the page.
+    /// <para>
+    /// The page's JavaScript context does not survive a navigation, and opening a chat can navigate.
+    /// A scan that kept its findings in the page would lose them and start over, which looks exactly
+    /// like a scan that is stuck. Accumulating in the app means a restarted scanner adds to what is
+    /// already known instead of replacing it.
+    /// </para>
+    /// </summary>
+    private readonly List<FriendConfig> _accumulated = new();
 
     /// <summary>
     /// The last status the scanner reported. Held so the watchdog can put it back after it has shown
@@ -93,6 +106,8 @@ public partial class ImportContactsPage : ContentPage
         }
 
         _scriptReady = true;
+
+        LogDiagnostic($"import started; page loaded={_pageLoaded}, ua={ResolveUserAgent()}");
 
         // The page drives itself from here: the watchdog loads the inbox if the platform view was
         // not ready yet, keeps sending the script until it reports, and gives up with an explanation.
@@ -264,6 +279,7 @@ public partial class ImportContactsPage : ContentPage
             // attempts were made when the script never comes back.
             _lastInjectionAt = DateTime.Now;
             _injectionAttempts++;
+            LogDiagnostic($"script sent (attempt {_injectionAttempts})");
         }
         catch (Exception ex)
         {
@@ -328,10 +344,50 @@ public partial class ImportContactsPage : ContentPage
             return;
 
         _reportReceived = true;
+        _lastReportAt = DateTime.Now;
+        _stallCount = 0;
+
+        // Merged rather than replaced, so a scanner that restarted after a navigation adds to what
+        // is already known instead of throwing it away.
+        Accumulate(scan);
+
         UpdateScanStatus(scan);
+        LogDiagnostic($"scan report: {scan.Attempts} opened, {_accumulated.Count} known, done={scan.Done}");
 
         if (scan.Done)
             ShowResults(scan);
+    }
+
+    private void Accumulate(ContactScanDto scan)
+    {
+        var batch = ContactScanReader.ToFriends(scan.Items);
+        if (batch.Count == 0)
+            return;
+
+        var merged = BackupMergePolicy.Merge(_accumulated, batch);
+        _accumulated.Clear();
+        _accumulated.AddRange(merged.Friends);
+    }
+
+    /// <summary>
+    /// Records a line in the app's run log, which the History page can export.
+    /// <para>
+    /// Added because the importer was, for several rounds, the only part of the app with no evidence
+    /// trail: when it failed, nothing on the device could say why. Anything the user can export is
+    /// worth more than another guess.
+    /// </para>
+    /// </summary>
+    private static void LogDiagnostic(string message)
+    {
+        try
+        {
+            var path = System.IO.Path.Combine(FileSystem.AppDataDirectory, AppConstants.RunLogsFileName);
+            new RunLogStore(path).Append("IMPORT", "-", message, DateTime.Now);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Import diagnostic log failed: {ex.Message}");
+        }
     }
 
     // ─── Watchdog ────────────────────────────────────────────────────────────
@@ -378,11 +434,32 @@ public partial class ImportContactsPage : ContentPage
         // Still no platform view when the page appeared: try again every tick until there is one.
         LoadInboxIfPossible();
 
-        // A report means the scanner is running. It enforces its own deadline and will publish a
-        // result, so there is nothing to chase.
+        // A report means the scanner started. From here the question is whether it is still working,
+        // which is answered by how long ago the last report arrived - not by whether one ever did.
         if (_reportReceived)
         {
-            ScanStatusLabel.Text = _lastStatus;
+            if (DateTime.Now - _lastReportAt <= StallTimeout)
+            {
+                ScanStatusLabel.Text = _lastStatus;
+                return;
+            }
+
+            // Nothing new for a while. The page's JavaScript context does not survive a navigation,
+            // and opening a chat can navigate, so the scanner may simply no longer exist.
+            _stallCount++;
+            LogDiagnostic($"scan stalled (report {_stallCount}), {_accumulated.Count} chats known so far");
+
+            if (_stallCount >= 2)
+            {
+                // Resending did not bring it back. Whatever was found is still worth offering.
+                await FinishStalledAsync();
+                return;
+            }
+
+            _lastReportAt = DateTime.Now;
+            _lastInjectionAt = DateTime.MinValue;
+            InjectScanner();
+            ScanStatusLabel.Text = $"Reading your chats… restarting the reader (attempt {_injectionAttempts})";
             return;
         }
 
@@ -396,6 +473,40 @@ public partial class ImportContactsPage : ContentPage
         if (DateTime.Now - _startedAt > ScanDeadline)
             await GiveUpOnScanAsync("The scanner did not start in the page");
     }
+
+    /// <summary>
+    /// Ends a scan that stopped reporting, using what was collected before it stopped.
+    /// <para>
+    /// Partial results are deliberately preferred over an error: the user asked to read their chats,
+    /// and offering the ones that were read is more useful than discarding them because the last few
+    /// were not. What was read is stated plainly so the number is not mistaken for the whole list.
+    /// </para>
+    /// </summary>
+    private async Task FinishStalledAsync()
+    {
+        if (_scanFinished)
+            return;
+
+        LogDiagnostic($"scan stopped responding; finishing with {_accumulated.Count} chats");
+
+        if (_accumulated.Count > 0)
+        {
+            ShowResults(new ContactScanDto { Attempts = _injectionAttempts });
+            await DisplayAlert("Reader stopped early",
+                $"The reader stopped responding, so only {_accumulated.Count} chats could be read. "
+                + "They are listed below - check the list before adding, and try again for the rest.",
+                "OK");
+            return;
+        }
+
+        await GiveUpOnScanAsync("The reader stopped responding");
+    }
+
+    /// <summary>
+    /// How long without a report before the scanner is treated as stopped. The scanner reports every
+    /// few seconds while it works, so silence for this long means it is no longer running.
+    /// </summary>
+    private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(20);
 
     /// <summary>
     /// How long to wait for the first report before concluding the script cannot run on this page.
@@ -449,6 +560,8 @@ public partial class ImportContactsPage : ContentPage
         await DisplayAlert(title,
             body + "\n\nOpen the inbox once from the Dashboard, make sure you are signed in, then try again.",
             "OK");
+
+        LogDiagnostic($"import gave up: {title} (page loaded={_pageLoaded}, script sent {_injectionAttempts} time(s), reported={_reportReceived})");
         await Navigation.PopAsync();
     }
 
@@ -459,7 +572,12 @@ public partial class ImportContactsPage : ContentPage
         _scanFinished = true;
         StopWatchdog();
 
-        var scanned = ContactScanReader.ToFriends(scan.Items);
+        // Taken from what was accumulated across every report, not from the last payload: a scanner
+        // that restarted would otherwise offer only what it found since the restart.
+        var scanned = _accumulated.Count > 0
+            ? _accumulated
+            : ContactScanReader.ToFriends(scan.Items);
+
         _found = ContactScanReader.SelectNew(_settingsService.GetFriendsList(), scanned);
         var alreadyKnown = scanned.Count - _found.Count;
 
