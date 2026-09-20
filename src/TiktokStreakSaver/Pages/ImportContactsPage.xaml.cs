@@ -25,9 +25,10 @@ public partial class ImportContactsPage : ContentPage
     private string _scanScript = string.Empty;
     private IDispatcherTimer? _pollTimer;
     private bool _scanFinished;
-    private bool _scriptInjected;
+    private bool _scriptReady;
+    private bool _pageLoaded;
+    private bool _isInjecting;
     private bool _isAdding;
-    private int _lastReportedCount = -1;
     private List<FriendConfig> _found = new();
 
     /// <summary>When polling began, so the page can give up instead of waiting forever.</summary>
@@ -59,7 +60,11 @@ public partial class ImportContactsPage : ContentPage
         {
             using var stream = await FileSystem.OpenAppPackageFileAsync(ScanScriptName);
             using var reader = new System.IO.StreamReader(stream);
-            _scanScript = await reader.ReadToEndAsync();
+
+            // Flattened before injection, exactly as the sending flow prepares its script: the
+            // Android WebView does not reliably evaluate a multi-line script, and the failure is
+            // silent - the page then waits for a scanner that never ran.
+            _scanScript = ScriptPreparation.ForInjection(await reader.ReadToEndAsync());
         }
         catch (Exception ex)
         {
@@ -68,14 +73,37 @@ public partial class ImportContactsPage : ContentPage
             return;
         }
 
+        _scriptReady = true;
         StartPolling();
 
-        // Configure BEFORE the first request, mirroring LoginPage. The user agent in particular has
-        // to match the one the session cookies were issued against: setting it after the first load
-        // lets that load go out as a different client, and TikTok answers with a login wall instead
-        // of the inbox.
-        TikTokWebViewHelper.ConfigureWebView(ScanWebView, ResolveUserAgent());
+        // The platform WebView may not exist yet while the page is appearing, and configuring one
+        // that does not exist does nothing at all - which is how the first load went out with the
+        // framework's default user agent and came up as TikTok's mobile page. HandlerChanged is the
+        // point where the platform view is guaranteed to be there.
+        ScanWebView.HandlerChanged -= OnScanWebViewHandlerChanged;
+        ScanWebView.HandlerChanged += OnScanWebViewHandlerChanged;
+        LoadInboxIfPossible();
+    }
 
+    private void OnScanWebViewHandlerChanged(object? sender, EventArgs e) => LoadInboxIfPossible();
+
+    /// <summary>
+    /// Configures the WebView and then loads the inbox, in that order and only once.
+    /// <para>
+    /// The order is the whole point: the user agent has to be in place before the first request,
+    /// because the session cookies were issued against it. Loading first and configuring afterwards
+    /// presents TikTok with a different client, which answers with the mobile layout or a sign-in
+    /// page instead of the inbox.
+    /// </para>
+    /// </summary>
+    private void LoadInboxIfPossible()
+    {
+        if (_pageLoaded || !_scriptReady || ScanWebView.Handler is null)
+            return;
+
+        _pageLoaded = true;
+
+        TikTokWebViewHelper.ConfigureWebView(ScanWebView, ResolveUserAgent());
         ScanWebView.Source = new UrlWebViewSource { Url = TikTokWebViewHelper.MessagesUrl };
     }
 
@@ -94,6 +122,7 @@ public partial class ImportContactsPage : ContentPage
     {
         base.OnDisappearing();
         StopPolling();
+        ScanWebView.HandlerChanged -= OnScanWebViewHandlerChanged;
 
         // The same teardown the login WebView uses: it stops loading and releases the page without
         // disconnecting a handler MAUI still owns.
@@ -137,25 +166,33 @@ public partial class ImportContactsPage : ContentPage
             return;
         }
 
-        // Injecting on every navigation would restart a finished scan, so it happens once.
-        if (_scriptInjected || string.IsNullOrEmpty(_scanScript))
+        // Injected on every navigation until results arrive. The script guards against restarting
+        // itself, and re-injecting matters because a full page navigation somewhere in TikTok's flow
+        // wipes the page's JavaScript context - taking a scan that was already running with it.
+        if (_isInjecting || _scanFinished || string.IsNullOrEmpty(_scanScript))
             return;
 
-        _scriptInjected = true;
-        ScanStatusLabel.Text = "Reading your chats…";
+        ScanStatusLabel.Text = "Reading your chats… waiting for the message list";
         _ = InvokeScannerAsync();
     }
 
     private async Task InvokeScannerAsync()
     {
+        _isInjecting = true;
         try
         {
             await ScanWebView.EvaluateJavaScriptAsync(_scanScript);
         }
         catch (Exception ex)
         {
+            // Worth surfacing rather than only logging: a script that cannot be injected looks
+            // exactly like an inbox with no conversations in it.
             System.Diagnostics.Debug.WriteLine($"Contact scan injection failed: {ex}");
             ScanStatusLabel.Text = "The scanner could not start on this page.";
+        }
+        finally
+        {
+            _isInjecting = false;
         }
     }
 
@@ -206,29 +243,44 @@ public partial class ImportContactsPage : ContentPage
         var json = ContactScanReader.NormalizeJavaScriptResult(raw);
         if (!ContactScanReader.TryParse(json, out var scan, out _) || scan is null)
         {
-            // The scanner has produced nothing at all. If that persists, the page has to say so
-            // rather than leave "Reading your chats…" on screen forever.
+            // No scanner state at all means the script never ran. Waiting longer cannot change that,
+            // so the page says so rather than blaming the inbox.
             if (DateTime.Now - _pollStartedAt > ScanTimeout)
                 await GiveUpOnScanAsync("The inbox could not be read");
 
             return;
         }
 
-        if (scan.Items.Count != _lastReportedCount)
-        {
-            _lastReportedCount = scan.Items.Count;
-            ScanStatusLabel.Text = $"Reading your chats… {scan.Items.Count} found so far";
-        }
+        UpdateScanStatus(scan);
 
         if (scan.Done)
             ShowResults(scan);
     }
 
     /// <summary>
-    /// How long to wait for the scanner before reporting that it did not work. Generous, because a
-    /// long inbox means many scroll passes.
+    /// Shows what the scanner is doing.
+    /// <para>
+    /// "Waiting for the list" and "found nothing" are different situations, and showing the same
+    /// text for both is what made a scan that was working look like one that had stalled.
+    /// </para>
     /// </summary>
-    private static readonly TimeSpan ScanTimeout = TimeSpan.FromSeconds(90);
+    private void UpdateScanStatus(ContactScanDto scan)
+    {
+        var text = scan.Items.Count > 0
+            ? $"Reading your chats… {scan.Items.Count} found so far"
+            : scan.Attempts > 0
+                ? "Reading your chats… waiting for the message list"
+                : "Reading your chats…";
+
+        if (text != ScanStatusLabel.Text)
+            ScanStatusLabel.Text = text;
+    }
+
+    /// <summary>
+    /// How long to wait for the scanner before reporting that it never started. The scanner imposes
+    /// its own deadline on the work itself, so this only covers a script that never ran at all.
+    /// </summary>
+    private static readonly TimeSpan ScanTimeout = TimeSpan.FromSeconds(60);
 
     private async Task GiveUpOnScanAsync(string title)
     {
@@ -240,7 +292,8 @@ public partial class ImportContactsPage : ContentPage
 
         ScanStatusLabel.Text = "Nothing could be read from the inbox.";
         await DisplayAlert(title,
-            "TikTok's inbox did not respond to reading. Open the inbox once from the Dashboard, make sure you are signed in, then try again.",
+            ContactScanReader.DescribeEmptyScan(null)
+            + " Open the inbox once from the Dashboard, make sure you are signed in, then try again.",
             "OK");
         await Navigation.PopAsync();
     }
@@ -267,7 +320,7 @@ public partial class ImportContactsPage : ContentPage
 
             await DisplayAlert("Nothing to add",
                 scanned.Count == 0
-                    ? "No conversations were found. Open TikTok's inbox once in the app, then try again."
+                    ? ContactScanReader.DescribeEmptyScan(scan)
                     : $"Read {scanned.Count} conversations, and all of them are already on your list.",
                 "OK");
 

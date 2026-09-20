@@ -50,6 +50,7 @@
 		<Compile Include="../../src/TiktokStreakSaver/Services/BackupTimes.cs" Link="Shared/Services/BackupTimes.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/ContactScanReader.cs" Link="Shared/Services/ContactScanReader.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/WebViewNavigationPolicy.cs" Link="Shared/Services/WebViewNavigationPolicy.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/ScriptPreparation.cs" Link="Shared/Services/ScriptPreparation.cs" />
 	</ItemGroup>
 
 </Project>

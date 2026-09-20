@@ -284,4 +284,102 @@ public class ContactScanReaderTests
 
         Assert.False(string.IsNullOrWhiteSpace(normalized));
     }
+
+    // ─── Explaining an empty scan ───────────────────────────────────────────
+
+    [Fact]
+    public void ThePageIsReportedWhenTheInboxIsWhereItEndedUp()
+    {
+        var scan = new ContactScanDto
+        {
+            Attempts = 12,
+            Url = "https://www.tiktok.com/messages",
+            UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0",
+            Log = new List<string> { "Scan started", "Pass 12: 0 chats (none new)" }
+        };
+
+        var text = ContactScanReader.DescribeEmptyScan(scan);
+
+        Assert.Contains("Steps taken: 12", text);
+        Assert.Contains("Pass 12", text);
+        Assert.Contains("Mozilla/5.0", text);
+    }
+
+    [Fact]
+    public void APageThatIsNotTheInboxIsCalledOut()
+    {
+        // The useful distinction: this is not an empty inbox, it is the wrong page.
+        var scan = new ContactScanDto
+        {
+            Attempts = 3,
+            Url = "https://www.tiktok.com/login/phone-or-email/email"
+        };
+
+        var text = ContactScanReader.DescribeEmptyScan(scan);
+
+        Assert.Contains("did not stay on the inbox", text);
+        Assert.Contains("sign in again", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("login", text);
+    }
+
+    [Fact]
+    public void AScannerThatNeverInspectedAnythingSaysSo()
+    {
+        var scan = new ContactScanDto { Attempts = 0, Url = "https://www.tiktok.com/messages" };
+
+        var text = ContactScanReader.DescribeEmptyScan(scan);
+
+        Assert.Contains("never managed to inspect", text);
+    }
+
+    [Fact]
+    public void AScannerThatRanSaysSoWithoutBlamingAnEmptyInbox()
+    {
+        var scan = new ContactScanDto
+        {
+            Attempts = 5,
+            Url = "https://www.tiktok.com/messages",
+            Log = new List<string>()
+        };
+
+        var text = ContactScanReader.DescribeEmptyScan(scan);
+
+        Assert.Contains("no conversation rows could be read", text);
+        Assert.DoesNotContain("Last step", text);
+    }
+
+    [Fact]
+    public void AMissingScanStateIsReportedAsSuch()
+    {
+        var text = ContactScanReader.DescribeEmptyScan(null);
+
+        Assert.Contains("never reached", text);
+    }
+
+    [Fact]
+    public void TheDiagnosticsReadTheScannerStateWithItsCamelCaseKeys()
+    {
+        const string json = """
+            {"done":true,"attempts":9,"items":[],"url":"https://www.tiktok.com/messages",
+             "ua":"Mozilla/5.0 Chrome/131","log":["Scan started","Pass 9: 0 chats"]}
+            """;
+
+        Assert.True(ContactScanReader.TryParse(json, out var scan, out var error), error);
+
+        Assert.Equal(9, scan!.Attempts);
+        Assert.Equal("https://www.tiktok.com/messages", scan.Url);
+        Assert.Equal("Mozilla/5.0 Chrome/131", scan.UserAgent);
+        Assert.Equal(2, scan.Log.Count);
+    }
+
+    [Fact]
+    public void AMissingDiagnosticsBlockStillLoads()
+    {
+        // An older or partial payload must not make the whole poll fail.
+        Assert.True(ContactScanReader.TryParse("{\"done\":false,\"items\":[]}", out var scan, out _));
+
+        Assert.Empty(scan!.Log);
+        Assert.Equal(string.Empty, scan.Url);
+        Assert.Equal(string.Empty, scan.UserAgent);
+    }
 }

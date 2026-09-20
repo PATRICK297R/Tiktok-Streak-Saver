@@ -21,13 +21,28 @@
         done: false,
         items: [],
         attempts: 0,
-        log: []
+        log: [],
+        url: location.href,
+        ua: navigator.userAgent
     };
 
-    // How many consecutive scrolls that revealed nothing new before giving up.
+    // How many consecutive scrolls that revealed nothing new before giving up - only once rows have
+    // been seen at all.
     var MAX_EMPTY_SCROLLS = 5;
     var MAX_SCROLLS = 40;
-    var SCROLL_PAUSE_MS = 1600;
+    var SCROLL_PAUSE_MS = 1500;
+
+    // How long to keep waiting for the list to render. The inbox builds its rows lazily and can take
+    // many seconds; treating the first empty look as "no chats" is what made the scan report an
+    // empty inbox while the inbox was plainly on screen.
+    var WAIT_FOR_LIST_MS = 45000;
+
+    // A ceiling, so the scan always finishes and the app is never left polling a scan that will
+    // never end.
+    var HARD_DEADLINE_MS = 120000;
+
+    var startedAt = Date.now();
+    var emptyScrolls = 0;
 
     var log = function (msg) {
         scan.log.push(msg);
@@ -121,7 +136,15 @@
             if (link) {
                 var href = link.getAttribute('href') || '';
                 var match = href.match(/\/@([^\/?]+)/);
-                if (match && match[1]) username = decodeURIComponent(match[1]);
+                if (match && match[1]) {
+                    // A malformed percent-escape makes decodeURIComponent throw, and an exception
+                    // here would kill the whole scan over one odd row.
+                    try {
+                        username = decodeURIComponent(match[1]);
+                    } catch (e) {
+                        username = match[1];
+                    }
+                }
             }
 
             var name = nameOf(item);
@@ -154,27 +177,75 @@
 
     var finish = function (reason) {
         scan.done = true;
+        scan.url = location.href;
         log('Finished: ' + scan.items.length + ' chats (' + reason + ')');
     };
 
-    var emptyScrolls = 0;
+    // Reschedules the next pass, unless the scan is finished or has run out of time. Every path ends
+    // through here or through finish(), so the scanner always reports a result eventually.
+    var schedule = function () {
+        if (scan.done) return;
 
-    var step = function () {
+        if (Date.now() - startedAt > HARD_DEADLINE_MS) {
+            finish('time limit reached');
+            return;
+        }
+
+        setTimeout(pass, SCROLL_PAUSE_MS);
+    };
+
+    // One pass can fail on something odd in the page. Without this the timer chain dies silently:
+    // no result is ever published, and the app waits for a scan that has already stopped.
+    var pass = function () {
+        try {
+            runPass();
+        } catch (e) {
+            log('Pass failed: ' + (e && e.message ? e.message : e));
+            schedule();
+        }
+    };
+
+    var runPass = function () {
         var before = scan.items.length;
         var visible = findItems();
         record(visible);
 
-        if (scan.items.length > before) emptyScrolls = 0;
+        var grew = scan.items.length > before;
+        if (grew) emptyScrolls = 0;
         else emptyScrolls++;
 
         scan.attempts++;
-        log('Pass ' + scan.attempts + ': ' + scan.items.length + ' chats, ' + emptyScrolls + ' quiet passes');
+        log('Pass ' + scan.attempts + ': ' + scan.items.length + ' chats'
+            + (grew ? ' (+' + (scan.items.length - before) + ')' : ' (none new)'));
 
-        if (emptyScrolls >= MAX_EMPTY_SCROLLS) { finish('end of list'); return; }
-        if (scan.attempts >= MAX_SCROLLS) { finish('step limit'); return; }
+        if (scan.items.length === 0) {
+            // Nothing has rendered yet, which is normal for the first few seconds while the inbox
+            // builds its list. Keep waiting rather than concluding the inbox is empty.
+            if (Date.now() - startedAt > WAIT_FOR_LIST_MS) {
+                finish('no conversation rows appeared');
+                return;
+            }
+
+            schedule();
+            return;
+        }
+
+        if (emptyScrolls >= MAX_EMPTY_SCROLLS) {
+            finish('end of list');
+            return;
+        }
+
+        if (scan.attempts >= MAX_SCROLLS) {
+            finish('step limit');
+            return;
+        }
 
         var container = findScrollContainer(visible);
-        if (!container) { finish('nothing scrollable'); return; }
+        if (!container) {
+            // Rows are on screen and nothing scrolls, so the whole list is already visible.
+            finish('list fits on screen');
+            return;
+        }
 
         var previousTop = container.scrollTop;
         // One viewport at a time, never scrollHeight: TikTok's list recycles its DOM nodes and
@@ -188,10 +259,10 @@
             return;
         }
 
-        setTimeout(step, SCROLL_PAUSE_MS);
+        schedule();
     };
 
     log('Scan started');
-    // The first pass waits for the WebView to finish laying the list out.
-    setTimeout(step, 1200);
+    // The first pass waits for the WebView to lay the page out before looking for rows.
+    setTimeout(pass, 1500);
 })();

@@ -419,8 +419,11 @@ public class StreakService : Service
             using var resourceStream = await FileSystem.OpenAppPackageFileAsync("tiktok_automation.js");
             using var reader = new StreamReader(resourceStream);
             this._baseScript = await reader.ReadToEndAsync();
-            this._baseScript = string.Join("\n", this._baseScript.Split('\n').Where(line => !line.TrimStart().StartsWith("//")));
-            this._baseScript = System.Text.RegularExpressions.Regex.Replace(this._baseScript, @"\s+", " ").Trim();
+
+            // Flattened before injection: the Android WebView does not reliably evaluate a
+            // multi-line script. Shared with the contact scanner so both scripts are prepared the
+            // same way.
+            this._baseScript = ScriptPreparation.ForInjection(this._baseScript);
 
             _webView = new WebView(this);
             _webView.Settings.JavaScriptEnabled = true;

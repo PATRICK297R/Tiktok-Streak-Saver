@@ -20,6 +20,18 @@ public class ContactScanDto
     [JsonPropertyName("done")] public bool Done { get; set; }
     [JsonPropertyName("items")] public List<ContactScanItemDto> Items { get; set; } = new();
     [JsonPropertyName("attempts")] public int Attempts { get; set; }
+
+    /// <summary>
+    /// The page the scanner ended up on. Reported because "found nothing" and "was looking at the
+    /// wrong page" need telling apart, and the page is the only evidence of which one happened.
+    /// </summary>
+    [JsonPropertyName("url")] public string Url { get; set; } = string.Empty;
+
+    /// <summary>The user agent actually in force inside the page.</summary>
+    [JsonPropertyName("ua")] public string UserAgent { get; set; } = string.Empty;
+
+    /// <summary>The scanner's own progress notes, newest last.</summary>
+    [JsonPropertyName("log")] public List<string> Log { get; set; } = new();
 }
 
 /// <summary>
@@ -104,7 +116,53 @@ public static class ContactScanReader
         }
 
         scan.Items ??= new List<ContactScanItemDto>();
+        scan.Log ??= new List<string>();
+        scan.Url ??= string.Empty;
+        scan.UserAgent ??= string.Empty;
         return true;
+    }
+
+    /// <summary>
+    /// Explains why a scan produced nothing, in terms the user can act on and I can debug from.
+    /// <para>
+    /// "No conversations were found" is true but useless: it covers an inbox that is genuinely empty,
+    /// a page that never reached the inbox, and a scanner that stopped early - which are three
+    /// different problems. The scanner reports where it ended up and how far it got, so the message
+    /// can say which one this was.
+    /// </para>
+    /// </summary>
+    public static string DescribeEmptyScan(ContactScanDto? scan)
+    {
+        if (scan is null)
+            return "The reader never reached TikTok's inbox, so nothing could be read.";
+
+        var lastStep = scan.Log.Count > 0 ? scan.Log[^1] : null;
+
+        // A page that is not the inbox means the scan was looking in the wrong place entirely, which
+        // is worth saying plainly rather than reporting as an empty list.
+        if (scan.Url.Length > 0 && !scan.Url.Contains("/messages", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"TikTok did not stay on the inbox — it ended up at {scan.Url}. "
+                 + "If that is a sign-in page, sign in again from the Profile page and retry.";
+        }
+
+        if (scan.Attempts == 0)
+            return "The reader started but never managed to inspect the page.";
+
+        return "TikTok's inbox was opened but no conversation rows could be read from it. "
+             + $"Steps taken: {scan.Attempts}."
+             + (string.IsNullOrWhiteSpace(lastStep) ? string.Empty : $" Last step: {lastStep}")
+             + (string.IsNullOrWhiteSpace(scan.UserAgent) ? string.Empty : $" Client: {Shorten(scan.UserAgent)}");
+    }
+
+    /// <summary>The browser name at the front of a user agent, which is the part that matters here.</summary>
+    private static string Shorten(string userAgent)
+    {
+        var text = userAgent.Trim();
+        if (text.Length <= 60)
+            return text;
+
+        return text[..60] + "…";
     }
 
     /// <summary>
