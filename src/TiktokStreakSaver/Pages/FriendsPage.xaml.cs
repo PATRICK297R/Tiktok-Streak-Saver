@@ -16,6 +16,18 @@ public partial class FriendsPage : ContentPage
     /// <summary>Whether the "Send order" card is showing its list. Kept across refreshes.</summary>
     private bool _sendOrderExpanded = false;
 
+    /// <summary>
+    /// The id of the row being dragged right now, or null.
+    /// <para>
+    /// Held here rather than carried in the drag's data package because the two halves of that package are
+    /// different types - a drag in progress exposes a DataPackage and a completed drop exposes a
+    /// DataPackageView, whose property collections do not convert to each other. Only one drag can be in
+    /// flight at a time and it always starts on this page, so a single field is enough. A drag that came
+    /// from somewhere else leaves this null, which reads as "not one of ours" - the right answer.
+    /// </para>
+    /// </summary>
+    private string? _draggingFriendId;
+
     public FriendsPage()
     {
         InitializeComponent();
@@ -218,13 +230,28 @@ public partial class FriendsPage : ContentPage
         {
             ColumnDefinitions = new ColumnDefinitionCollection
             {
-                new ColumnDefinition { Width = new GridLength(26) },
+                new ColumnDefinition { Width = new GridLength(20) },
+                new ColumnDefinition { Width = new GridLength(24) },
                 new ColumnDefinition { Width = GridLength.Star },
                 new ColumnDefinition { Width = GridLength.Auto },
                 new ColumnDefinition { Width = GridLength.Auto }
             },
-            ColumnSpacing = 6
+            ColumnSpacing = 4
         };
+
+        // The grab handle, and only an affordance: the drag itself is on the whole row, so the target is
+        // the row rather than a 20pt glyph the user has to hit exactly.
+        var handle = new Label
+        {
+            Text = "⠿",
+            FontSize = 16,
+            HorizontalTextAlignment = TextAlignment.Center,
+            VerticalTextAlignment = TextAlignment.Center,
+            VerticalOptions = LayoutOptions.Center
+        };
+        handle.SetAppThemeColor(Label.TextColorProperty,
+            GetThemeColor("Gray400", "#8B8F96"), GetThemeColor("Gray400", "#8B8F96"));
+        grid.Children.Add(handle);
 
         var position = new Label
         {
@@ -237,6 +264,7 @@ public partial class FriendsPage : ContentPage
         };
         position.SetAppThemeColor(Label.TextColorProperty,
             GetThemeColor("Primary", "#FE2C55"), GetThemeColor("Primary", "#FE2C55"));
+        Grid.SetColumn(position, 1);
         grid.Children.Add(position);
 
         var displayName = string.IsNullOrEmpty(friend.DisplayName) ? friend.Username : friend.DisplayName;
@@ -248,11 +276,11 @@ public partial class FriendsPage : ContentPage
             FontSize = 12,
             TextColor = GetThemeColor("Gray400", "#8B8F96")
         });
-        Grid.SetColumn(infoStack, 1);
+        Grid.SetColumn(infoStack, 2);
         grid.Children.Add(infoStack);
 
-        grid.Children.Add(CreateSendOrderMoveButton(friend, up: true, canMove: index > 0, column: 2));
-        grid.Children.Add(CreateSendOrderMoveButton(friend, up: false, canMove: index < total - 1, column: 3));
+        grid.Children.Add(CreateSendOrderMoveButton(friend, up: true, canMove: index > 0, column: 3));
+        grid.Children.Add(CreateSendOrderMoveButton(friend, up: false, canMove: index < total - 1, column: 4));
 
         var row = new Border
         {
@@ -263,6 +291,8 @@ public partial class FriendsPage : ContentPage
         row.SetAppThemeColor(Border.BackgroundColorProperty,
             GetThemeColor("Gray100", "#F3F4F6"), GetThemeColor("Gray900", "#111827"));
         row.Content = grid;
+
+        AttachSendOrderDragAndDrop(row, friend);
         return row;
     }
 
@@ -292,8 +322,8 @@ public partial class FriendsPage : ContentPage
     }
 
     /// <summary>
-    /// Applies one move and saves it. The save result is checked rather than discarded, because a
-    /// silent write failure would look exactly like the arrows not working.
+    /// Applies one arrow press and saves it. Shares the save tail with a drop, so both ways of
+    /// reordering are stored the same way and a failed write is reported either way.
     /// </summary>
     private void MoveSendOrderEntry(string friendId, bool up)
     {
@@ -303,11 +333,117 @@ public partial class FriendsPage : ContentPage
         if (!moved)
             return;
 
+        SaveSendOrder(all);
+    }
+
+    /// <summary>
+    /// Applies a drop and saves it: the dragged row takes the place of the row it was dropped on.
+    /// </summary>
+    private void MoveSendOrderEntryTo(string draggedId, string targetId)
+    {
+        var all = _settingsService.GetFriendsList();
+
+        if (!FriendOrder.TryMoveTo(all, draggedId, targetId))
+            return;
+
+        SaveSendOrder(all);
+    }
+
+    /// <summary>
+    /// Saves a reordered list and redraws it.
+    /// <para>
+    /// The save result is checked rather than discarded, because a silent write failure would look
+    /// exactly like the reorder not working.
+    /// </para>
+    /// </summary>
+    private void SaveSendOrder(List<FriendConfig> all)
+    {
         if (!_settingsService.TrySaveFriendsList(all, out var error))
             _ = DisplayAlert("Could not save order", error ?? "The new order was not saved.", "OK");
 
         // Re-reads the saved list either way, so the page shows what was actually stored.
         LoadLists();
+    }
+
+    /// <summary>
+    /// Makes one row draggable onto another row.
+    /// <para>
+    /// The row is both the drag source and the drop target. Android starts a drag on a long press, so the
+    /// row has to be pressed and held - which is why the arrows are kept as well: they are the same move
+    /// without a gesture that has to be discovered, and they still work if a drag does not start on a
+    /// given device.
+    /// </para>
+    /// </summary>
+    private void AttachSendOrderDragAndDrop(Border row, FriendConfig friend)
+    {
+        // A run in progress owns the order, so reordering is closed while it works - the same rule the
+        // arrows follow.
+        var canReorder = !_lastIsRunning;
+
+        var drag = new DragGestureRecognizer { CanDrag = canReorder };
+
+        drag.DragStarting += (_, _) =>
+        {
+            _draggingFriendId = friend.Id;
+
+            // Dimmed while it is in the air, so the list underneath reads as the place it is going.
+            row.Opacity = 0.4;
+        };
+
+        // Cleared whatever happened, including a drag that ended nowhere.
+        drag.DropCompleted += (_, _) =>
+        {
+            _draggingFriendId = null;
+            row.Opacity = 1.0;
+        };
+
+        row.GestureRecognizers.Add(drag);
+
+        var drop = new DropGestureRecognizer { AllowDrop = canReorder };
+
+        drop.DragOver += (_, _) =>
+        {
+            if (IsDraggingAnotherEntry(friend.Id))
+                HighlightSendOrderDropTarget(row, true);
+        };
+
+        drop.DragLeave += (_, _) => HighlightSendOrderDropTarget(row, false);
+
+        drop.Drop += (_, _) =>
+        {
+            HighlightSendOrderDropTarget(row, false);
+
+            if (!IsDraggingAnotherEntry(friend.Id))
+                return;
+
+            // Read before the move, which rebuilds every row and so replaces the handler holding this.
+            var draggedId = _draggingFriendId;
+            if (!string.IsNullOrEmpty(draggedId))
+                MoveSendOrderEntryTo(draggedId, friend.Id);
+        };
+
+        row.GestureRecognizers.Add(drop);
+    }
+
+    /// <summary>
+    /// Whether a row is being dragged onto a different one.
+    /// <para>
+    /// Used for the highlight and for the drop itself, so the row that lights up is exactly the row a
+    /// drop would move.
+    /// </para>
+    /// </summary>
+    private bool IsDraggingAnotherEntry(string rowId) =>
+        !string.IsNullOrEmpty(_draggingFriendId) && _draggingFriendId != rowId;
+
+    /// <summary>
+    /// Tints the row the finger is over, so a drop has a visible target instead of having to be aimed
+    /// blind. A tint rather than the accent colour itself, so the row's own text stays readable.
+    /// </summary>
+    private void HighlightSendOrderDropTarget(Border row, bool highlighted)
+    {
+        row.SetAppThemeColor(Border.BackgroundColorProperty,
+            highlighted ? GetThemeColor("PrimarySubtle", "#FFE4EA") : GetThemeColor("Gray100", "#F3F4F6"),
+            highlighted ? GetThemeColor("PrimarySubtleDark", "#3AFE2C55") : GetThemeColor("Gray900", "#111827"));
     }
 
     private void UpdateStatsCard(List<FriendConfig> allItems)

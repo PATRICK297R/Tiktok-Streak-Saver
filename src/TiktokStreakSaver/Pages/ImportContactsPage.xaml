@@ -10,12 +10,16 @@
 
     <Grid RowDefinitions="Auto, *">
 
-        <VerticalStackLayout Grid.Row="0" Padding="20,16,20,12" Spacing="10">
+        <!--
+            The heading is deliberately short. Everything under it is the state of the scan, and that is
+            what this page is for.
+        -->
+        <VerticalStackLayout Grid.Row="0" Padding="20,18,20,8" Spacing="3">
             <VerticalStackLayout Spacing="2">
-                <Label Text="Reading your inbox"
+                <Label Text="Import from chats"
                        Style="{StaticResource PageTitleLabel}"
                        HorizontalOptions="Start"/>
-                <Label Text="The app reads your TikTok conversations and then adds the ones you choose, all at once. It opens each chat in turn to read the real name, so a long list takes a while — you can close the app while it works and it will keep going. Nothing is sent."
+                <Label Text="Adds the people you already chat with, in one go. Nothing is sent."
                        FontFamily="InterRegular"
                        FontSize="13"
                        TextColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray400}}"
@@ -23,37 +27,94 @@
                        HorizontalOptions="Start"/>
             </VerticalStackLayout>
 
-            <!--
-                There is no TikTok page on this screen any more, and that is deliberate. The scan runs in a
-                service against its own WebView, so there is nothing here to tap, scroll or interfere with,
-                and nothing a stray touch can do to a scan that is half way through the inbox.
-            -->
-            <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
-                <ActivityIndicator x:Name="ScanActivity"
-                                   IsRunning="True"
-                                   WidthRequest="18"
-                                   HeightRequest="18"
-                                   Color="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource Primary}}"
-                                   VerticalOptions="Center"/>
-                <Label x:Name="ScanStatusLabel"
-                       Text="Opening your inbox…"
-                       Style="{StaticResource DataLabel}"
-                       LineBreakMode="WordWrap"
-                       VerticalOptions="Center"/>
-            </HorizontalStackLayout>
-
-            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-                <Button x:Name="CloseScanButton"
-                        Text="Run in background"
-                        Style="{StaticResource TextButton}"
-                        Clicked="OnCloseScanClicked"/>
-                <Button x:Name="StopScanButton"
-                        Grid.Column="1"
-                        Text="Stop"
-                        Style="{StaticResource TextButton}"
-                        Clicked="OnStopScanClicked"/>
-            </Grid>
         </VerticalStackLayout>
+
+        <!--
+            The scanning state, which used to be one line of text on an otherwise blank page. There is no
+            TikTok page on this screen any more, and that is deliberate: the scan runs in a service against
+            its own WebView, so there is nothing here to tap, scroll or interfere with, and nothing a stray
+            touch can do to a scan that is half way through the inbox. What is left to show is progress,
+            what the scan is doing, and the way out.
+        -->
+        <Grid x:Name="ScanPanel" Grid.Row="1" RowDefinitions="*,Auto">
+
+            <!-- Scrolls rather than clips, so a large font setting cannot push the buttons off the page. -->
+            <ScrollView Grid.Row="0">
+                <VerticalStackLayout Padding="20,4,20,8" Spacing="14">
+
+                    <Border Style="{StaticResource SectionCard}">
+                        <VerticalStackLayout Spacing="16">
+
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14">
+                                <ActivityIndicator x:Name="ScanActivity"
+                                                   IsRunning="True"
+                                                   WidthRequest="22"
+                                                   HeightRequest="22"
+                                                   Color="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource Primary}}"
+                                                   VerticalOptions="Start"/>
+                                <VerticalStackLayout Grid.Column="1" Spacing="3" VerticalOptions="Center">
+                                    <Label x:Name="ScanStatusLabel"
+                                           Text="Opening your inbox…"
+                                           Style="{StaticResource ValueLabel}"
+                                           LineBreakMode="WordWrap"/>
+                                    <Label x:Name="ScanDetailLabel"
+                                           Text=""
+                                           Style="{StaticResource DataLabel}"
+                                           LineBreakMode="WordWrap"/>
+                                </VerticalStackLayout>
+                            </Grid>
+
+                            <!-- What the scan does, so a long wait is not a blank one. -->
+                            <VerticalStackLayout Spacing="10">
+                                <Grid ColumnDefinitions="18,*" ColumnSpacing="8">
+                                    <Label Text="1" Style="{StaticResource DataLabel}" HorizontalTextAlignment="Center"/>
+                                    <Label Grid.Column="1"
+                                           Text="Opens your TikTok inbox"
+                                           Style="{StaticResource DataLabel}"
+                                           LineBreakMode="WordWrap"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="18,*" ColumnSpacing="8">
+                                    <Label Text="2" Style="{StaticResource DataLabel}" HorizontalTextAlignment="Center"/>
+                                    <Label Grid.Column="1"
+                                           Text="Opens each chat in turn to read the real name"
+                                           Style="{StaticResource DataLabel}"
+                                           LineBreakMode="WordWrap"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="18,*" ColumnSpacing="8">
+                                    <Label Text="3" Style="{StaticResource DataLabel}" HorizontalTextAlignment="Center"/>
+                                    <Label Grid.Column="1"
+                                           Text="Shows you the list to pick from before anything is saved"
+                                           Style="{StaticResource DataLabel}"
+                                           LineBreakMode="WordWrap"/>
+                                </Grid>
+                            </VerticalStackLayout>
+
+                        </VerticalStackLayout>
+                    </Border>
+
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <!-- Pinned to the bottom, so the way out is always in the same place. -->
+            <VerticalStackLayout Grid.Row="1" Padding="20,0,20,20" Spacing="10">
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                    <Button x:Name="CloseScanButton"
+                            Text="Run in background"
+                            Style="{StaticResource TextButton}"
+                            Clicked="OnCloseScanClicked"/>
+                    <Button x:Name="StopScanButton"
+                            Grid.Column="1"
+                            Text="Stop"
+                            Style="{StaticResource TextButton}"
+                            Clicked="OnStopScanClicked"/>
+                </Grid>
+
+                <Label Text="You can close the app while this runs — the scan keeps going in the background and tells you when it is done."
+                       Style="{StaticResource DataLabel}"
+                       HorizontalTextAlignment="Center"
+                       LineBreakMode="WordWrap"/>
+            </VerticalStackLayout>
+        </Grid>
 
         <ScrollView x:Name="ResultsPanel" Grid.Row="1" IsVisible="False">
             <VerticalStackLayout Padding="20" Spacing="14"
@@ -82,10 +143,9 @@
 
                 <!--
                     Nothing is saved until this list has been seen. The scan is a good guess and not an
-                    authority: a group whose name is one word reads as a person, and a person whose
-                    display name is not their handle can read as a group. Ticking rows and correcting
-                    them here is what stops a wrong reading from being saved and failing silently on
-                    every run.
+                    authority: a group whose chat header carries a profile link reads as a person.
+                    Ticking rows and correcting them here is what stops a wrong reading from being saved
+                    and failing silently on every run.
                 -->
                 <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="4">
                     <Button Text="Select all"
@@ -114,7 +174,7 @@
                     <VerticalStackLayout x:Name="ResultsList" Spacing="6"/>
                 </Border>
 
-                <Label Text="Tick the ones to add. Use Edit on a row to change its name, its username, or whether it is a person or a group — the scan can read a group as a person, and a group is matched by the name in its chat header, so check those before adding."
+                <Label Text="Tick the ones to add. Use Edit on a row to change its name, its username, or whether it is a person or a group."
                        Style="{StaticResource DataLabel}"
                        LineBreakMode="WordWrap"/>
 

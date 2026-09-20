@@ -158,7 +158,7 @@ public sealed class ImportDraftEntry
         get
         {
             if (Entry.IsGroup)
-                return "Group · matched by its chat name";
+                return "Group chat";
 
             var username = (Entry.Username ?? string.Empty).Trim();
             return username.Length > 0 ? "@" + username : "Person · needs a username";

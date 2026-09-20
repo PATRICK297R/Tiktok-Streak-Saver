@@ -187,4 +187,132 @@ public class FriendOrderTests
         Assert.Equal(2, FriendOrder.CountInQueue(all));
         Assert.Equal(FriendOrder.SendQueue(all).Count, FriendOrder.CountInQueue(all));
     }
+
+    // ─── Dropping one row onto another (drag and drop) ───────────────────────
+
+    [Fact]
+    public void DroppingAnEntryOnOneBelowItTakesThatPlace()
+    {
+        var all = new List<FriendConfig> { Entry("a"), Entry("b"), Entry("c"), Entry("d") };
+
+        // a lands where c was, and everything between them shifts up to make room.
+        Assert.True(FriendOrder.TryMoveTo(all, "a", "c"));
+
+        Assert.Equal(new[] { "b", "c", "a", "d" }, QueueIds(all));
+    }
+
+    [Fact]
+    public void DroppingAnEntryOnOneAboveItTakesThatPlace()
+    {
+        var all = new List<FriendConfig> { Entry("a"), Entry("b"), Entry("c"), Entry("d") };
+
+        Assert.True(FriendOrder.TryMoveTo(all, "b", "d"));
+
+        Assert.Equal(new[] { "a", "c", "d", "b" }, QueueIds(all));
+    }
+
+    [Fact]
+    public void DroppingAnEntryOnItselfChangesNothing()
+    {
+        // Dropping a row back where it came from is the commonest way to end a drag, so it has to be
+        // reported as no change rather than saved as a move.
+        var all = new List<FriendConfig> { Entry("a"), Entry("b") };
+
+        Assert.False(FriendOrder.TryMoveTo(all, "a", "a"));
+        Assert.Equal(new[] { "a", "b" }, QueueIds(all));
+    }
+
+    [Fact]
+    public void DroppingOntoADisabledEntryChangesNothing()
+    {
+        // A disabled entry is not in the queue, so it is not on screen to be dropped on. Refusing rather
+        // than guessing keeps drag and the arrows from disagreeing about what a move means.
+        var all = new List<FriendConfig> { Entry("a"), Entry("off", enabled: false), Entry("b") };
+
+        Assert.False(FriendOrder.TryMoveTo(all, "a", "off"));
+        Assert.Equal(new[] { "a", "b" }, QueueIds(all));
+    }
+
+    [Fact]
+    public void ADisabledEntryCannotBeDragged()
+    {
+        var all = new List<FriendConfig> { Entry("a"), Entry("off", enabled: false) };
+
+        Assert.False(FriendOrder.TryMoveTo(all, "off", "a"));
+        Assert.Equal(new[] { "a" }, QueueIds(all));
+    }
+
+    [Fact]
+    public void DroppingLeavesDisabledEntriesInTheSlotsTheyAreIn()
+    {
+        var all = new List<FriendConfig>
+        {
+            Entry("a"), Entry("off1", enabled: false), Entry("b"), Entry("off2", enabled: false)
+        };
+
+        Assert.True(FriendOrder.TryMoveTo(all, "b", "a"));
+
+        Assert.Equal(new[] { "b", "a" }, QueueIds(all));
+
+        // Same objects in the same slots: only the enabled ones were refilled around them.
+        Assert.Equal("b", all[0].Id);
+        Assert.Equal("off1", all[1].Id);
+        Assert.Equal("a", all[2].Id);
+        Assert.Equal("off2", all[3].Id);
+    }
+
+    [Fact]
+    public void AnyOrderCanBeBuiltByDropping()
+    {
+        // Reverses the queue by repeatedly dragging the last entry onto the first. This is the move the
+        // arrows need three presses for, and the reason dragging is worth having.
+        var all = new List<FriendConfig> { Entry("a"), Entry("b"), Entry("c"), Entry("d") };
+
+        Assert.True(FriendOrder.TryMoveTo(all, "d", "a"));
+        Assert.Equal(new[] { "d", "a", "b", "c" }, QueueIds(all));
+
+        Assert.True(FriendOrder.TryMoveTo(all, "c", "a"));
+        Assert.Equal(new[] { "d", "c", "a", "b" }, QueueIds(all));
+
+        Assert.True(FriendOrder.TryMoveTo(all, "b", "a"));
+        Assert.Equal(new[] { "d", "c", "b", "a" }, QueueIds(all));
+    }
+
+    [Fact]
+    public void ADropNeverLosesOrDuplicatesAnEntry()
+    {
+        // The whole list is rewritten from the queue order, so a mistake here would drop an entry or
+        // write one twice - the kind of damage a reorder must never do.
+        var all = new List<FriendConfig>
+        {
+            Entry("a"), Entry("b"), Entry("off", enabled: false), Entry("c"), Entry("d")
+        };
+
+        Assert.True(FriendOrder.TryMoveTo(all, "d", "a"));
+
+        Assert.Equal(5, all.Count);
+        Assert.Equal(new[] { "a", "b", "c", "d", "off" }, all.Select(f => f.Id).OrderBy(x => x).ToArray());
+        Assert.Equal(new[] { "d", "a", "b", "c" }, QueueIds(all));
+    }
+
+    [Theory]
+    [InlineData(null, "a")]
+    [InlineData("", "a")]
+    [InlineData("missing", "a")]
+    [InlineData("a", null)]
+    [InlineData("a", "")]
+    [InlineData("a", "missing")]
+    public void UnknownDropTargetsReportNoChange(string? id, string? targetId)
+    {
+        var all = new List<FriendConfig> { Entry("a"), Entry("b") };
+
+        Assert.False(FriendOrder.TryMoveTo(all, id, targetId));
+        Assert.Equal(new[] { "a", "b" }, QueueIds(all));
+    }
+
+    [Fact]
+    public void DroppingOnANullListIsHandled()
+    {
+        Assert.False(FriendOrder.TryMoveTo(null, "a", "b"));
+    }
 }

@@ -51,6 +51,58 @@ public static class FriendOrder
     public static bool TryMoveDown(List<FriendConfig>? all, string? id) =>
         TryMove(all, id, forward: true);
 
+    /// <summary>
+    /// Moves an entry so that it sits where another one sits now, which is what dropping a row onto
+    /// another row means: the dragged entry takes the target's place and everything between them shifts
+    /// by one. Returns false when nothing would change - the same entry, an unknown id, or a disabled one.
+    /// <para>
+    /// Expressed against the queue rather than the raw list, so a drag and an arrow press cannot disagree
+    /// about what a move is: both are moves within the send queue.
+    /// </para>
+    /// </summary>
+    public static bool TryMoveTo(List<FriendConfig>? all, string? id, string? targetId)
+    {
+        if (all is null || string.IsNullOrEmpty(id) || string.IsNullOrEmpty(targetId) || id == targetId)
+            return false;
+
+        var queue = SendQueue(all);
+
+        // Disabled entries are not in the queue, so they are neither on screen to be dragged nor on
+        // screen to be dropped on. Refusing is what keeps the move honest.
+        var from = queue.FindIndex(f => f.Id == id);
+        var to = queue.FindIndex(f => f.Id == targetId);
+
+        if (from < 0 || to < 0 || from == to)
+            return false;
+
+        var dragged = queue[from];
+        queue.RemoveAt(from);
+        queue.Insert(to, dragged);
+
+        ApplyQueueOrder(all, queue);
+        return true;
+    }
+
+    /// <summary>
+    /// Writes a queue order back onto the saved list.
+    /// <para>
+    /// Only the enabled slots are refilled, in the new order, so disabled entries keep the slots they are
+    /// in. They are not part of the queue, and reordering the queue must not shuffle them around.
+    /// </para>
+    /// </summary>
+    private static void ApplyQueueOrder(List<FriendConfig> all, List<FriendConfig> queue)
+    {
+        var next = 0;
+
+        for (var i = 0; i < all.Count && next < queue.Count; i++)
+        {
+            if (!all[i].IsEnabled)
+                continue;
+
+            all[i] = queue[next++];
+        }
+    }
+
     private static bool TryMove(List<FriendConfig>? all, string? id, bool forward)
     {
         if (all is null || string.IsNullOrEmpty(id))

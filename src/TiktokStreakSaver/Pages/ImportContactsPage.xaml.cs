@@ -85,6 +85,8 @@ public partial class ImportContactsPage : ContentPage
         _resultsShown = false;
         ResultsPanel.IsVisible = false;
         OutcomePanel.IsVisible = false;
+        ScanPanel.IsVisible = true;
+        ScanDetailLabel.Text = string.Empty;
 
         // The inbox needs a session; without one TikTok shows a login wall and the scan would report
         // "nothing found", which reads like a bug rather than a missing login.
@@ -120,7 +122,10 @@ public partial class ImportContactsPage : ContentPage
         }
 
         if (snapshot is null)
+        {
             StartServiceScan();
+            ScanDetailLabel.Text = "Starting the reader…";
+        }
 
         StartPolling();
 #else
@@ -251,6 +256,28 @@ public partial class ImportContactsPage : ContentPage
         var text = ContactScanSnapshot.ProgressText(snapshot);
         if (text != ScanStatusLabel.Text)
             ScanStatusLabel.Text = text;
+
+        var detail = DescribeScanProgress(snapshot);
+        if (detail != ScanDetailLabel.Text)
+            ScanDetailLabel.Text = detail;
+    }
+
+    /// <summary>
+    /// The second line under the status: how far along the scan is, and the reminder that closing the app
+    /// is safe. The status line already says what is happening, so this only adds what it cannot.
+    /// </summary>
+    private static string DescribeScanProgress(ContactScanSnapshot snapshot)
+    {
+        var read = snapshot.Items.Count;
+        var checkedCount = snapshot.Attempts;
+
+        // Nothing opened yet: the page is still loading, or the first chat is being read.
+        if (checkedCount <= 0)
+            return "Reading each chat in turn takes a couple of seconds, so a long list takes a while.";
+
+        var chats = read == 1 ? "chat" : "chats";
+
+        return $"{read} {chats} read, {checkedCount} checked. You can close the app — the scan keeps going.";
     }
 
     /// <summary>
@@ -402,6 +429,7 @@ public partial class ImportContactsPage : ContentPage
         ShowRows();
 
         OutcomePanel.IsVisible = false;
+        ScanPanel.IsVisible = false;
         ResultsPanel.IsVisible = true;
     }
 
@@ -425,6 +453,7 @@ public partial class ImportContactsPage : ContentPage
         CloseScanButton.IsVisible = false;
 
         ResultsPanel.IsVisible = false;
+        ScanPanel.IsVisible = false;
 
         OutcomeTitleLabel.Text = title;
         OutcomeReasonLabel.Text = reason;
@@ -460,12 +489,14 @@ public partial class ImportContactsPage : ContentPage
 
         ResultsPanel.IsVisible = false;
         OutcomePanel.IsVisible = false;
+        ScanPanel.IsVisible = true;
 
         ScanActivity.IsRunning = true;
         StopScanButton.IsVisible = true;
         StopScanButton.IsEnabled = true;
         CloseScanButton.IsVisible = true;
         ScanStatusLabel.Text = "Opening your inbox…";
+        ScanDetailLabel.Text = string.Empty;
 
         StartServiceScan();
         StartPolling();
@@ -677,7 +708,7 @@ public partial class ImportContactsPage : ContentPage
             if (!config.IsGroup && string.IsNullOrWhiteSpace(config.Username))
             {
                 var typed = await DisplayPromptAsync("Username",
-                    "This one is matched by username. Enter the TikTok username, without the @:",
+                    "Enter the TikTok username for this one, without the @:",
                     initialValue: string.Empty);
 
                 if (typed is not null && !ContactEditRules.TrySetUsername(config, typed, out var usernameError))

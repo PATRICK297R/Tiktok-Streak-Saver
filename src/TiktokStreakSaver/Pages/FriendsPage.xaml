@@ -129,7 +129,7 @@
                             <VerticalStackLayout x:Name="SendOrderListContainer" Spacing="6" IsVisible="False"/>
 
                             <Label x:Name="SendOrderHintLabel"
-                                   Text="Use the arrows to move an entry up or down. The entry at the top is messaged first; disabled entries are skipped."
+                                   Text="Press and hold a row to drag it where you want it, or use the arrows. The entry at the top is messaged first; disabled entries are skipped."
                                    Style="{StaticResource DataLabel}"
                                    LineBreakMode="WordWrap"
                                    IsVisible="False"/>
