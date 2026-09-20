@@ -383,16 +383,17 @@ public partial class ImportContactsPage : ContentPage
     /// <summary>
     /// Shows what the scanner is doing.
     /// <para>
-    /// "Waiting for the list" and "found nothing" are different situations, and showing the same
-    /// text for both is what made a scan that was working look like one that had stalled.
+    /// The scanner opens each conversation in turn to read its real name, which takes a moment per
+    /// chat, so the count of chats checked is shown too. Without it a scan that is working steadily
+    /// looks like one that has stalled.
     /// </para>
     /// </summary>
     private void UpdateScanStatus(ContactScanDto scan)
     {
         var text = scan.Items.Count > 0
-            ? $"Reading your chats… {scan.Items.Count} found so far"
+            ? $"Reading your chats… {scan.Items.Count} found, {scan.Attempts} checked"
             : scan.Attempts > 0
-                ? "Reading your chats… waiting for the message list"
+                ? $"Reading your chats… opening chat {scan.Attempts}"
                 : "Reading your chats…";
 
         if (text != ScanStatusLabel.Text)

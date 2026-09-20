@@ -1,18 +1,18 @@
-// ─────────────────────────────────────────────────────────────────────────────
 // Contact scanner for the "Import from TikTok chats" feature.
 //
-// Deliberately a separate script from tiktok_automation.js. That one walks the chat list to send
-// messages and mutates the page as it goes; this one only reads. Keeping them apart means a change
-// to the sending flow cannot break the import, and nothing here can send a message by accident.
+// How it identifies a chat: it opens the conversation and reads the header, which is
+// exactly what tiktok_automation.js does when sending. Reading the list rows instead
+// does not work. A row shows the display name and a preview of the last message in the
+// same text block, so the preview gets mistaken for a name ("sent you a sticker"), and
+// a direct message row carries no profile link either, so every row looked like a group.
 //
-// Where it differs from tiktok_automation.js: results are accumulated into window.__saverScan and
-// read back by the app, instead of calling into a JavaScript interface. Polling one JSON object is
-// far less to go wrong than marshalling strings across the bridge, and it makes the scan
-// inspectable from a remote debugger while it runs.
+// The header is authoritative: a profile link in it means a person with a real
+// username, and no profile link means a group, which the app matches by its chat name.
+// Those are the two things the sending flow needs in order to find a chat again.
 //
-// The chat item selectors, the fallbacks and the "scroll by a viewport, never to the bottom" rule
-// are copied from the automation script, which already had to solve exactly these problems.
-// ─────────────────────────────────────────────────────────────────────────────
+// Results are pushed to the app through SaverScan.report on every step, so the app
+// sees progress rather than waiting blind, and a scanner that stopped can be told
+// apart from one that never ran at all.
 (function () {
     // Re-injection must not restart a scan that is already running.
     if (window.__saverScan && !window.__saverScan.done) return;
@@ -26,30 +26,28 @@
         ua: navigator.userAgent
     };
 
-    // How many consecutive scrolls that revealed nothing new before giving up - only once rows have
-    // been seen at all.
-    var MAX_EMPTY_SCROLLS = 5;
-    var MAX_SCROLLS = 40;
-    var SCROLL_PAUSE_MS = 1500;
+    // How long to wait after opening a chat for its header to show the new one.
+    var OPEN_WAIT_MS = 900;
 
-    // How long to keep waiting for the list to render. The inbox builds its rows lazily and can take
-    // many seconds; treating the first empty look as "no chats" is what made the scan report an
-    // empty inbox while the inbox was plainly on screen.
+    // A chat can fail to open; this many in a row means the walk is stuck.
+    var MAX_CONSECUTIVE_MISSES = 6;
+
+    // Ceiling on chats visited, so a huge inbox cannot run forever. Each chat costs about two
+    // seconds, so this is kept under what the deadline below allows.
+    var MAX_CHATS = 110;
+
+    // A ceiling on the whole scan, so the app is never left waiting.
+    var HARD_DEADLINE_MS = 300000;
+
+    // How long to keep waiting for the list to render at the start.
     var WAIT_FOR_LIST_MS = 45000;
 
-    // A ceiling, so the scan always finishes and the app is never left polling a scan that will
-    // never end.
-    var HARD_DEADLINE_MS = 120000;
-
     var startedAt = Date.now();
+    var chatIndex = 0;
+    var consecutiveMisses = 0;
     var emptyScrolls = 0;
+    var seen = {};
 
-    // Publishes the current state to the app.
-    //
-    // The app receives this through a JavaScript interface rather than by evaluating expressions in
-    // the page: that is the mechanism the sending flow already uses, and it is the one proven to work
-    // on this platform. Pushing also means the app hears about the very first line the scanner logs,
-    // so "the script never ran" can never be mistaken for "the inbox had nothing in it".
     var push = function () {
         try {
             scan.url = location.href;
@@ -59,7 +57,7 @@
                 SaverScan.report(JSON.stringify(scan));
             }
         } catch (e) {
-            // A page that is mid-navigation can reject the call; the next pass will try again.
+            // A page that is mid-navigation can reject the call; the next step tries again.
         }
     };
 
@@ -78,7 +76,6 @@
         var items = document.querySelectorAll("[data-e2e*='dm-new-conversation-item']");
         if (items.length > 0) return items;
 
-        // TikTok renames these periodically, so the same fallbacks the automation script uses.
         var fallbacks = ["[data-e2e*='chat-list-item']", "[data-e2e*='chat-item']"];
         for (var i = 0; i < fallbacks.length; i++) {
             try {
@@ -98,41 +95,228 @@
                 parent = parent.parentElement;
             }
         }
-
-        var candidates = document.querySelectorAll('[class*="ChatList"], [class*="chatList"], [class*="conversation-list"]');
-        for (var i = 0; i < candidates.length; i++) {
-            if (candidates[i].scrollHeight > candidates[i].clientHeight + 10) return candidates[i];
-        }
-
         return null;
     };
 
-    // A chat item shows the name, a preview of the last message and a timestamp, all as separate
-    // lines. Only the name is wanted, so name-bearing elements are tried first and the raw text is
-    // a last resort with only its first line taken.
-    var nameOf = function (item) {
-        var preferred = item.querySelectorAll('[class*="name"], [class*="Name"], strong, h4, h3, span[dir="auto"]');
-        for (var i = 0; i < preferred.length; i++) {
-            var candidate = text(preferred[i]);
-            // A name is short; anything longer is a message preview that a loose selector caught.
-            if (candidate && candidate.length <= 64) return candidate;
+    var findHeader = function () {
+        return document.querySelector('[data-e2e="chat-header"]') ||
+            document.querySelector('[class*="ChatHeader"]') ||
+            document.querySelector('[class*="chatHeader"]') ||
+            document.querySelector('[class*="DivChatHeader"]');
+    };
+
+
+    // Records a chat if it is new. Returns 'new', 'duplicate' or 'unreadable' so the caller can
+    // tell a chat it has already seen apart from one it could not open - only the latter is a
+    // reason to give up.
+    var record = function (entry) {
+        if (!entry) return 'unreadable';
+
+        var key = keyOf(entry);
+        if (seen[key]) return 'duplicate';
+
+        seen[key] = true;
+        scan.items.push(entry);
+        return 'new';
+    };
+
+    var schedule = function () {
+        if (scan.done) return;
+
+        if (Date.now() - startedAt > HARD_DEADLINE_MS) { finish('time limit reached'); return; }
+        if (scan.attempts >= MAX_CHATS) { finish('visit limit reached'); return; }
+        if (consecutiveMisses >= MAX_CONSECUTIVE_MISSES) { finish('several chats could not be opened'); return; }
+
+        setTimeout(step, 120);
+    };
+
+    var step = function () {
+        try {
+            runStep();
+        } catch (e) {
+            log('Step failed: ' + (e && e.message ? e.message : e));
+            schedule();
+        }
+    };
+
+    var runStep = function () {
+        var items = findItems();
+
+        if (items.length === 0) {
+            // Nothing rendered yet. The inbox builds its list lazily, so this is normal at first
+            // and must not be read as an empty inbox.
+            if (Date.now() - startedAt > WAIT_FOR_LIST_MS) { finish('no conversation rows appeared'); return; }
+            schedule();
+            return;
         }
 
-        var link = item.querySelector('a[href*="/@"]');
+        if (chatIndex >= items.length) {
+            // The visible rows are all visited; try to reveal more.
+            if (scrollForMore(items)) return;
+            finish(emptyScrolls > 0 ? 'end of list' : 'list fits on screen');
+            return;
+        }
+
+        var item = items[chatIndex];
+        if (!item) { chatIndex++; schedule(); return; }
+
+        // Counted here rather than after opening, so a chat that never opens still counts as an
+        // attempt and cannot loop forever.
+        scan.attempts++;
+        item.click();
+        setTimeout(afterOpen, OPEN_WAIT_MS);
+    };
+
+    var afterOpen = function () {
+        var entry = identifyOpenChat();
+
+        // A header that still shows the previous chat means the click had not taken effect yet.
+        // One retry is enough; a second failure is treated as an unreadable chat.
+        if (entry && keyOf(entry) === lastIdentifiedKey) {
+            setTimeout(function () {
+                var retry = identifyOpenChat();
+                settle(retry && keyOf(retry) === lastIdentifiedKey ? null : retry);
+            }, OPEN_WAIT_MS);
+            return;
+        }
+
+        settle(entry);
+    };
+
+    var lastIdentifiedKey = null;
+
+    var settle = function (entry) {
+        var outcome = record(entry);
+
+        if (outcome === 'new') {
+            lastIdentifiedKey = keyOf(entry);
+            consecutiveMisses = 0;
+            emptyScrolls = 0;
+            log('Chat ' + scan.attempts + ': ' + (entry.isGroup ? 'group "' : '@') + entry.displayName
+                + (entry.isGroup ? '"' : '') + ' (' + scan.items.length + ' total)');
+        } else if (outcome === 'duplicate') {
+            // Reached again through a scroll overlap, which is expected and not a failure.
+            log('Chat ' + scan.attempts + ': already seen');
+        } else {
+            consecutiveMisses++;
+            log('Chat ' + scan.attempts + ': could not be identified');
+        }
+
+        chatIndex++;
+        schedule();
+    };
+
+    // Reveals the next screen of chats. Returns true when it has arranged for the walk to continue,
+    // and false when the list has nothing more to show.
+    var scrollForMore = function (items) {
+        var container = findScrollContainer(items);
+        if (!container) return false;
+
+        emptyScrolls++;
+        if (emptyScrolls > 6) return false;
+
+        var before = container.scrollTop;
+        var previousCount = items.length;
+        // One viewport at a time, never scrollHeight: TikTok's list recycles its DOM nodes and
+        // jumping to the bottom skips conversations.
+        container.scrollTop += container.clientHeight * 2;
+
+        if (container.scrollTop <= before) return false;
+
+        setTimeout(function () {
+            var refreshed = findItems();
+            // Resume a little before the end of what was already visible, because the recycled list
+            // overlaps between screens.
+            var resumeFrom = Math.max(0, previousCount - 10);
+            chatIndex = Math.min(resumeFrom, Math.max(0, refreshed.length - 1));
+            log('Scrolled; continuing from chat ' + (chatIndex + 1) + ' of ' + refreshed.length);
+            schedule();
+        }, 1500);
+
+        return true;
+    };
+
+    // Published immediately so the app knows the scanner is running before the first chat is
+    // opened. Without this the first report would only arrive seconds later, and a scanner that
+    // had failed to start would be indistinguishable from one that was still waiting.
+    log('Scan started');
+
+    // The first step waits for the WebView to lay the page out before looking for rows.
+    setTimeout(step, 1500);
+})();
+
+    // The username of the open chat, or empty when the header has no profile link - which is
+    // what a group looks like. Mirrors tiktok_automation.js, including its last-resort search,
+    // because that is the logic that already finds chats correctly when sending.
+    var headerUsername = function () {
+        var header = findHeader();
+        if (!header) return '';
+
+        var link = header.querySelector('a[href*="/@"]');
         if (link) {
-            var linked = text(link);
-            if (linked) return linked;
+            var href = link.getAttribute('href') || '';
+            var match = href.match(/\/@([^\/?]+)/);
+            if (match && match[1]) {
+                try {
+                    return decodeURIComponent(match[1]).trim();
+                } catch (e) {
+                    return match[1].trim();
+                }
+            }
         }
 
-        var lines = (item.innerText || '').split('\n');
-        for (var j = 0; j < lines.length; j++) {
-            var line = (lines[j] || '').replace(/\s+/g, ' ').trim();
-            // Skip the blank rows and the timestamp row.
-            if (!line || /^\d{1,2}:\d{2}/.test(line)) continue;
-            if (line.length <= 64) return line;
+        // Last resort: a profile link in the conversation pane but not in the nav or the list.
+        var links = document.querySelectorAll('a[href*="/@"]');
+        for (var i = 0; i < links.length; i++) {
+            var candidate = links[i];
+            if (candidate.closest("[data-e2e*='conversation-item']") ||
+                candidate.closest("[data-e2e*='chat-list']") ||
+                candidate.closest("[data-e2e*='dm-new-conversation']")) continue;
+            if (candidate.closest("[data-e2e*='nav-']") ||
+                candidate.closest('[data-e2e="profile-icon"]') ||
+                candidate.closest('nav')) continue;
+
+            var other = candidate.getAttribute('href') || '';
+            var otherMatch = other.match(/\/@([^\/?]+)/);
+            if (otherMatch && otherMatch[1]) {
+                try {
+                    return decodeURIComponent(otherMatch[1]).trim();
+                } catch (e) {
+                    return otherMatch[1].trim();
+                }
+            }
         }
 
         return '';
+    };
+
+    // The header's own text: the person's display name, or the group's chat name.
+    var headerName = function () {
+        var header = findHeader();
+        if (!header) return '';
+
+        var lines = (header.innerText || '').split('\n');
+        for (var i = 0; i < lines.length; i++) {
+            var line = (lines[i] || '').replace(/\s+/g, ' ').trim();
+            if (line) return line;
+        }
+
+        return '';
+    };
+
+    // Identifies the chat that is currently open. Null means the header is not readable yet.
+    var identifyOpenChat = function () {
+        var username = headerUsername();
+        if (username) {
+            var name = headerName();
+            return { username: username, displayName: name || username, isGroup: false };
+        }
+
+        // No profile link in the header, so this is a group, which the app matches by name.
+        var groupName = headerName();
+        if (!groupName) return null;
+
+        return { username: '', displayName: groupName, isGroup: true };
     };
 
     var keyOf = function (entry) {
@@ -141,148 +325,7 @@
             : 'user:' + entry.username.toLowerCase();
     };
 
-    var seen = {};
-
-    var record = function (items) {
-        var added = 0;
-
-        for (var i = 0; i < items.length; i++) {
-            var item = items[i];
-
-            // A profile link is what makes a chat a person: a group has no @handle to link to. This
-            // is the same DM-versus-group test the automation script already relies on.
-            var link = item.querySelector('a[href*="/@"]');
-            var username = '';
-            if (link) {
-                var href = link.getAttribute('href') || '';
-                var match = href.match(/\/@([^\/?]+)/);
-                if (match && match[1]) {
-                    // A malformed percent-escape makes decodeURIComponent throw, and an exception
-                    // here would kill the whole scan over one odd row.
-                    try {
-                        username = decodeURIComponent(match[1]);
-                    } catch (e) {
-                        username = match[1];
-                    }
-                }
-            }
-
-            var name = nameOf(item);
-            var entry = {
-                username: username,
-                displayName: name,
-                isGroup: !username
-            };
-
-            // Groups are matched by their chat header, so one with no readable name is dropped
-            // rather than added as an entry that could never be sent to.
-            if (entry.isGroup && !entry.displayName) continue;
-
-            // Neither a handle nor a name means nothing usable was read from the row.
-            if (!entry.username && !entry.displayName) continue;
-
-            // A person with only a handle gets that handle as the display name.
-            if (!entry.isGroup && !entry.displayName) entry.displayName = entry.username;
-
-            var key = keyOf(entry);
-            if (seen[key]) continue;
-
-            seen[key] = true;
-            scan.items.push(entry);
-            added++;
-        }
-
-        return added;
-    };
-
     var finish = function (reason) {
         scan.done = true;
-        scan.url = location.href;
         log('Finished: ' + scan.items.length + ' chats (' + reason + ')');
     };
-
-    // Reschedules the next pass, unless the scan is finished or has run out of time. Every path ends
-    // through here or through finish(), so the scanner always reports a result eventually.
-    var schedule = function () {
-        if (scan.done) return;
-
-        if (Date.now() - startedAt > HARD_DEADLINE_MS) {
-            finish('time limit reached');
-            return;
-        }
-
-        setTimeout(pass, SCROLL_PAUSE_MS);
-    };
-
-    // One pass can fail on something odd in the page. Without this the timer chain dies silently:
-    // no result is ever published, and the app waits for a scan that has already stopped.
-    var pass = function () {
-        try {
-            runPass();
-        } catch (e) {
-            log('Pass failed: ' + (e && e.message ? e.message : e));
-            schedule();
-        }
-    };
-
-    var runPass = function () {
-        var before = scan.items.length;
-        var visible = findItems();
-        record(visible);
-
-        var grew = scan.items.length > before;
-        if (grew) emptyScrolls = 0;
-        else emptyScrolls++;
-
-        scan.attempts++;
-        log('Pass ' + scan.attempts + ': ' + scan.items.length + ' chats'
-            + (grew ? ' (+' + (scan.items.length - before) + ')' : ' (none new)'));
-
-        if (scan.items.length === 0) {
-            // Nothing has rendered yet, which is normal for the first few seconds while the inbox
-            // builds its list. Keep waiting rather than concluding the inbox is empty.
-            if (Date.now() - startedAt > WAIT_FOR_LIST_MS) {
-                finish('no conversation rows appeared');
-                return;
-            }
-
-            schedule();
-            return;
-        }
-
-        if (emptyScrolls >= MAX_EMPTY_SCROLLS) {
-            finish('end of list');
-            return;
-        }
-
-        if (scan.attempts >= MAX_SCROLLS) {
-            finish('step limit');
-            return;
-        }
-
-        var container = findScrollContainer(visible);
-        if (!container) {
-            // Rows are on screen and nothing scrolls, so the whole list is already visible.
-            finish('list fits on screen');
-            return;
-        }
-
-        var previousTop = container.scrollTop;
-        // One viewport at a time, never scrollHeight: TikTok's list recycles its DOM nodes and
-        // jumping to the bottom skips conversations.
-        container.scrollTop += container.clientHeight * 2;
-
-        // A list that stopped moving while nothing new appeared is the end of it, which is the
-        // normal way this finishes on a short list.
-        if (container.scrollTop <= previousTop && emptyScrolls >= 2) {
-            finish('list stopped scrolling');
-            return;
-        }
-
-        schedule();
-    };
-
-    log('Scan started');
-    // The first pass waits for the WebView to lay the page out before looking for rows.
-    setTimeout(pass, 1500);
-})();

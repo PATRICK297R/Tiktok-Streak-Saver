@@ -162,4 +162,22 @@ public class ScriptPreparationTests
         Assert.Contains($"typeof {ContactScanReader.BridgeName}", script);
         Assert.Contains($"{ContactScanReader.BridgeName}.report(", script);
     }
+
+    [Fact]
+    public void TheBundledScannerIdentifiesChatsTheWaySendingDoes()
+    {
+        var path = FindScannerScript();
+        if (path is null)
+            return;
+
+        var script = System.IO.File.ReadAllText(path);
+
+        // Opening the conversation and reading its header is the only method that works here. The
+        // list rows show a display name and a message preview in one text block, and carry no
+        // profile link for direct messages, so reading rows got the preview as a name and called
+        // every direct message a group. This test exists so that cannot be reintroduced quietly.
+        Assert.Contains("chat-header", script);
+        Assert.Contains("item.click()", script);
+        Assert.Contains("headerUsername", script);
+    }
 }
