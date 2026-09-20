@@ -39,6 +39,12 @@ public static class AppConstants
     /// <summary>Stops a chat import that is running. Sent to the import service by the page and by the notification.</summary>
     public const string ActionStopContactScan = PackageName + ".ACTION_STOP_CONTACT_SCAN";
 
+    /// <summary>
+    /// Carried by a chat-import notification: tapping it should land on the import page rather than on
+    /// whichever tab happened to be open, because that is where the results are.
+    /// </summary>
+    public const string ExtraOpenContactImport = PackageName + ".EXTRA_OPEN_CONTACT_IMPORT";
+
     public const string RunHistoryFileName = "run_history.json";
 
     public const string MauiRunTraceFileName = "maui_run_trace.txt";

@@ -387,11 +387,20 @@ public class ContactScanService : Service
         }
     }
 
-    /// <summary>Tapping the notification opens the app, where the results are waiting on the import page.</summary>
+    /// <summary>
+    /// Tapping the notification opens the app, on the import page, where the results are waiting.
+    /// <para>
+    /// The extra is what makes that happen: without it the app is simply brought to the front on whichever
+    /// tab was open, and a finished import is invisible unless the user remembers where to look for it.
+    /// Both the progress notification and the result one carry it, so tapping either lands in the same
+    /// place - progress while it runs, the list when it is done.
+    /// </para>
+    /// </summary>
     private PendingIntent OpenAppIntent()
     {
         var intent = new Intent(this, typeof(MainActivity));
         intent.SetFlags(ActivityFlags.NewTask | ActivityFlags.ClearTop);
+        intent.PutExtra(AppConstants.ExtraOpenContactImport, true);
         return PendingIntent.GetActivity(this, 0, intent, PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent)!;
     }
 

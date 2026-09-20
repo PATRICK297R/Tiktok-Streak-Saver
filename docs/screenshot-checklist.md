@@ -41,9 +41,11 @@ replacing with:
 5. **History** — the success-rate chart plus a run row (ideally one showing the `Test run` label).
 6. **Profile** — the settings: schedule, interval, streak risk alerts, test run, battery toggle.
 7. **Update dialog** — the in-app update prompt.
-8. **Import from your chats** — the scanner reading the TikTok inbox, and the review list it offers:
-   the rows with their tick boxes, and a row opened for correction so the name, the username and the
-   person-or-group choice are all visible.
+8. **Import from your chats** — the page while the scan runs (the status line, the counts, `Run in
+   background` and `Stop`) and the review list it offers: the rows with their tick boxes, and a row
+   opened for correction so the name, the username and the person-or-group choice are all visible. Worth
+   capturing alongside it: the notification that reports the scan's progress, and the finished one that
+   opens straight to this page when tapped.
 9. **Backup & Restore** — the Profile card, ideally with the result line showing what a restore added.
 
 Screenshots that show a feature added recently are worth including:
