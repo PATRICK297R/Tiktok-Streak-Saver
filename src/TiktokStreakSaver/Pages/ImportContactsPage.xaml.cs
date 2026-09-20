@@ -381,8 +381,15 @@ public partial class ImportContactsPage : ContentPage
     {
         try
         {
+#if ANDROID
+            // Recorded through the service's own log path, so the line lands in the in-memory log as
+            // well as the file and therefore shows up in the export. Writing only to the file would
+            // hide it whenever a run had already filled the in-memory log.
+            Platforms.Android.Services.StreakService.AppendExternalLog("IMPORT", "-", message);
+#else
             var path = System.IO.Path.Combine(FileSystem.AppDataDirectory, AppConstants.RunLogsFileName);
             new RunLogStore(path).Append("IMPORT", "-", message, DateTime.Now);
+#endif
         }
         catch (Exception ex)
         {

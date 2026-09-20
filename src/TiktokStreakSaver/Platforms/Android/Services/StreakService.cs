@@ -102,6 +102,21 @@ public class StreakService : Service
         }
     }
 
+    /// <summary>
+    /// Appends a line to the same run log the service writes to, so entries recorded by other screens
+    /// appear in the log the Activity page exports.
+    /// <para>
+    /// Writing straight to the log file is not enough: <see cref="GetLogs"/> returns the in-memory
+    /// list whenever it has anything in it, and only falls back to the file when it is empty. A line
+    /// written to the file alone would therefore be missing from the export after any run in the same
+    /// session - which is precisely when someone is most likely to be looking.
+    /// </para>
+    /// </summary>
+    public static void AppendExternalLog(string phase, string username, string message)
+    {
+        AppendLogEntry(RunLogStore.Format(phase, username, message, DateTime.Now));
+    }
+
     public static List<string> GetLogs()
     {
         // The in-memory list is authoritative while this process is alive and holds the newest run.
