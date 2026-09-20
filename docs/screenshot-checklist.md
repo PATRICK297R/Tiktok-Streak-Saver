@@ -36,9 +36,12 @@ replacing with:
 2. **Dashboard** — the *Daily Automation Progress* card, with the progress bar and the
    Sent Today / Success / Remaining figures.
 3. **Dashboard, run in progress** — the stop button and the progress notification.
-4. **Friends** — the list with enable toggles and the add field, plus the **Send order** card with
-   its `Reorder` view open, which is where entries are moved in the queue: the grab handle and the
-   arrows on each row, and ideally a row mid-drag with the target row tinted.
+4. **Friends** — the list with enable toggles and the add field. Then the same list in **arranging
+   mode**: the `Reorder` toggle beside the Friends / Groups switch, the `Arranging the send order`
+   banner with its `Save order` and `Cancel` buttons (Save still greyed out until something moves), the
+   cards with their grab handles and the `disabled` marker, and ideally one card mid-drag with the
+   target card tinted. Also worth capturing: the **Send order** card, which is where the arrows live and
+   is hidden while the list is being arranged.
 5. **History** — the success-rate chart plus a run row (ideally one showing the `Test run` label).
 6. **Profile** — the settings: schedule, interval, streak risk alerts, test run, battery toggle.
 7. **Update dialog** — the in-app update prompt.

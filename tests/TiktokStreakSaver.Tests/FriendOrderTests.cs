@@ -315,4 +315,140 @@ public class FriendOrderTests
     {
         Assert.False(FriendOrder.TryMoveTo(null, "a", "b"));
     }
+
+    // ─── Rearranging one section of the list (drag inside Friends or Groups) ──
+
+    [Fact]
+    public void MovingWithinASectionTakesTheTargetsPlace()
+    {
+        var all = new List<FriendConfig> { Entry("a"), Entry("b"), Entry("c"), Entry("d") };
+
+        Assert.True(FriendOrder.TryMoveWithinSection(all, "a", "c"));
+
+        Assert.Equal(new[] { "b", "c", "a", "d" }, all.Select(f => f.Id).ToArray());
+    }
+
+    [Fact]
+    public void MovingWithinASectionLeavesTheOtherKindWhereItWas()
+    {
+        // The list is one sequence split into two sections for display. Rearranging the friends must not
+        // shuffle the groups, which is the whole reason this is not a queue-wide move.
+        var all = new List<FriendConfig>
+        {
+            Entry("f1"), Entry("g1", isGroup: true), Entry("f2"), Entry("g2", isGroup: true), Entry("f3")
+        };
+
+        Assert.True(FriendOrder.TryMoveWithinSection(all, "f3", "f1"));
+
+        Assert.Equal(new[] { "f3", "g1", "f1", "g2", "f2" }, all.Select(f => f.Id).ToArray());
+
+        // Both groups are in the slots they started in.
+        Assert.Equal(1, all.FindIndex(f => f.Id == "g1"));
+        Assert.Equal(3, all.FindIndex(f => f.Id == "g2"));
+    }
+
+    [Fact]
+    public void RearrangingGroupsLeavesTheFriendsWhereTheyWere()
+    {
+        var all = new List<FriendConfig>
+        {
+            Entry("f1"), Entry("g1", isGroup: true), Entry("f2"), Entry("g2", isGroup: true)
+        };
+
+        Assert.True(FriendOrder.TryMoveWithinSection(all, "g2", "g1"));
+
+        Assert.Equal(new[] { "f1", "g2", "f2", "g1" }, all.Select(f => f.Id).ToArray());
+    }
+
+    [Fact]
+    public void DisabledEntriesCanBeMovedWithinASection()
+    {
+        // Unlike the queue, the list shows disabled entries with their switch off. A row the user can see
+        // and press has to move when they move it, or the handle reads as broken.
+        var all = new List<FriendConfig>
+        {
+            Entry("a"), Entry("off", enabled: false), Entry("b")
+        };
+
+        Assert.True(FriendOrder.TryMoveWithinSection(all, "off", "a"));
+
+        Assert.Equal(new[] { "off", "a", "b" }, all.Select(f => f.Id).ToArray());
+    }
+
+    [Fact]
+    public void AnEnabledEntryCanBeDroppedOnADisabledOne()
+    {
+        var all = new List<FriendConfig>
+        {
+            Entry("a"), Entry("off", enabled: false), Entry("b")
+        };
+
+        Assert.True(FriendOrder.TryMoveWithinSection(all, "b", "off"));
+
+        Assert.Equal(new[] { "a", "b", "off" }, all.Select(f => f.Id).ToArray());
+    }
+
+    [Fact]
+    public void DroppingAFriendOnAGroupChangesNothing()
+    {
+        // They are in different sections, so one of these ids came from somewhere the drag did not.
+        var all = new List<FriendConfig> { Entry("f"), Entry("g", isGroup: true) };
+
+        Assert.False(FriendOrder.TryMoveWithinSection(all, "f", "g"));
+        Assert.Equal(new[] { "f", "g" }, all.Select(x => x.Id).ToArray());
+    }
+
+    [Fact]
+    public void DroppingAnEntryOnItselfInTheListChangesNothing()
+    {
+        var all = new List<FriendConfig> { Entry("a"), Entry("b") };
+
+        Assert.False(FriendOrder.TryMoveWithinSection(all, "a", "a"));
+        Assert.Equal(new[] { "a", "b" }, all.Select(f => f.Id).ToArray());
+    }
+
+    [Theory]
+    [InlineData(null, "a")]
+    [InlineData("", "a")]
+    [InlineData("missing", "a")]
+    [InlineData("a", null)]
+    [InlineData("a", "")]
+    [InlineData("a", "missing")]
+    public void UnknownSectionTargetsReportNoChange(string? id, string? targetId)
+    {
+        var all = new List<FriendConfig> { Entry("a"), Entry("b") };
+
+        Assert.False(FriendOrder.TryMoveWithinSection(all, id, targetId));
+        Assert.Equal(new[] { "a", "b" }, all.Select(f => f.Id).ToArray());
+    }
+
+    [Fact]
+    public void MovingWithinASectionNeverLosesOrDuplicatesAnEntry()
+    {
+        var all = new List<FriendConfig>
+        {
+            Entry("a"), Entry("g", isGroup: true), Entry("off", enabled: false), Entry("b")
+        };
+
+        Assert.True(FriendOrder.TryMoveWithinSection(all, "b", "off"));
+
+        Assert.Equal(4, all.Count);
+        Assert.Equal(new[] { "a", "b", "g", "off" }, all.Select(f => f.Id).OrderBy(x => x).ToArray());
+        Assert.Equal(new[] { "a", "b", "off" }, all.Where(f => !f.IsGroup).Select(f => f.Id).ToArray());
+    }
+
+    [Fact]
+    public void AnySectionOrderCanBeBuiltByDropping()
+    {
+        var all = new List<FriendConfig> { Entry("a"), Entry("b"), Entry("c"), Entry("d") };
+
+        Assert.True(FriendOrder.TryMoveWithinSection(all, "d", "a"));
+        Assert.Equal(new[] { "d", "a", "b", "c" }, all.Select(f => f.Id).ToArray());
+
+        Assert.True(FriendOrder.TryMoveWithinSection(all, "c", "a"));
+        Assert.Equal(new[] { "d", "c", "a", "b" }, all.Select(f => f.Id).ToArray());
+
+        Assert.True(FriendOrder.TryMoveWithinSection(all, "b", "a"));
+        Assert.Equal(new[] { "d", "c", "b", "a" }, all.Select(f => f.Id).ToArray());
+    }
 }

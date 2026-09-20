@@ -129,50 +129,101 @@
                             <VerticalStackLayout x:Name="SendOrderListContainer" Spacing="6" IsVisible="False"/>
 
                             <Label x:Name="SendOrderHintLabel"
-                                   Text="Press and hold a row to drag it where you want it, or use the arrows. The entry at the top is messaged first; disabled entries are skipped."
+                                   Text="Drag a row or use the arrows. Moves here are saved straight away — to arrange the list and save it yourself, use Reorder above. The entry at the top is messaged first."
                                    Style="{StaticResource DataLabel}"
                                    LineBreakMode="WordWrap"
                                    IsVisible="False"/>
                         </VerticalStackLayout>
                     </Border>
 
-                    <!-- Mode Switcher (Friends / Groups) -->
-                    <Border Stroke="{AppThemeBinding Light={StaticResource BorderColorLight}, Dark={StaticResource BorderColorDark}}"
+                    <!-- Mode Switcher (Friends / Groups), with the way into arranging the order. The order
+                         is arranged in the lists themselves rather than in a separate view, so the toggle
+                         sits with the lists it applies to. -->
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <Border Grid.Column="0"
+                                Stroke="{AppThemeBinding Light={StaticResource BorderColorLight}, Dark={StaticResource BorderColorDark}}"
+                                StrokeThickness="1"
+                                StrokeShape="RoundRectangle 22"
+                                BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}">
+                            <Grid ColumnDefinitions="*,*" HeightRequest="44">
+                                <Border x:Name="FriendsModeTabBorder"
+                                        Grid.Column="0"
+                                        StrokeThickness="0"
+                                        BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
+                                        StrokeShape="RoundRectangle 22">
+                                    <Label x:Name="FriendsModeTabLabel"
+                                           Text="Friends"
+                                           TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
+                                           FontFamily="InterSemiBold"
+                                           FontSize="14"
+                                           HorizontalOptions="Center" VerticalOptions="Center"/>
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Tapped="OnFriendsModeTapped"/>
+                                    </Border.GestureRecognizers>
+                                </Border>
+                                <Border x:Name="GroupsModeTabBorder"
+                                        Grid.Column="1"
+                                        StrokeThickness="0"
+                                        BackgroundColor="Transparent"
+                                        StrokeShape="RoundRectangle 22">
+                                    <Label x:Name="GroupsModeTabLabel"
+                                           Text="Groups"
+                                           TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray400}}"
+                                           FontFamily="InterSemiBold"
+                                           FontSize="14"
+                                           HorizontalOptions="Center" VerticalOptions="Center"/>
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Tapped="OnGroupsModeTapped"/>
+                                    </Border.GestureRecognizers>
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <Button x:Name="ReorderToggleButton"
+                                Grid.Column="1"
+                                Text="Reorder"
+                                Style="{StaticResource TextButton}"
+                                VerticalOptions="Center"
+                                Clicked="OnToggleReorderModeClicked"/>
+                    </Grid>
+
+                    <!--
+                        Shown while the order is being arranged. The moves are staged: they change the list on
+                        screen and are only written when Save is tapped, so backing out leaves the stored
+                        order exactly as it was.
+                    -->
+                    <Border x:Name="ReorderBanner"
+                            IsVisible="False"
                             StrokeThickness="1"
-                            StrokeShape="RoundRectangle 22"
-                            BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}">
-                        <Grid ColumnDefinitions="*,*" HeightRequest="44">
-                            <Border x:Name="FriendsModeTabBorder"
-                                    Grid.Column="0"
-                                    StrokeThickness="0"
-                                    BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
-                                    StrokeShape="RoundRectangle 22">
-                                <Label x:Name="FriendsModeTabLabel"
-                                       Text="Friends"
-                                       TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
-                                       FontFamily="InterSemiBold"
-                                       FontSize="14"
-                                       HorizontalOptions="Center" VerticalOptions="Center"/>
-                                <Border.GestureRecognizers>
-                                    <TapGestureRecognizer Tapped="OnFriendsModeTapped"/>
-                                </Border.GestureRecognizers>
-                            </Border>
-                            <Border x:Name="GroupsModeTabBorder"
-                                    Grid.Column="1"
-                                    StrokeThickness="0"
-                                    BackgroundColor="Transparent"
-                                    StrokeShape="RoundRectangle 22">
-                                <Label x:Name="GroupsModeTabLabel"
-                                       Text="Groups"
-                                       TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray400}}"
-                                       FontFamily="InterSemiBold"
-                                       FontSize="14"
-                                       HorizontalOptions="Center" VerticalOptions="Center"/>
-                                <Border.GestureRecognizers>
-                                    <TapGestureRecognizer Tapped="OnGroupsModeTapped"/>
-                                </Border.GestureRecognizers>
-                            </Border>
-                        </Grid>
+                            StrokeShape="RoundRectangle 16"
+                            Padding="14,12"
+                            Stroke="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource Primary}}"
+                            BackgroundColor="{AppThemeBinding Light={StaticResource PrimarySubtle}, Dark={StaticResource PrimarySubtleDark}}">
+                        <VerticalStackLayout Spacing="10">
+                            <Label Text="Arranging the send order"
+                                   FontFamily="InterSemiBold"
+                                   FontSize="14"
+                                   TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource Primary}}"/>
+                            <Label Text="Press and hold a card, then drag it onto the card whose place it should take. Nothing is saved until you tap Save order."
+                                   Style="{StaticResource DataLabel}"
+                                   LineBreakMode="WordWrap"/>
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                <Button x:Name="SaveOrderButton"
+                                        Text="Save order"
+                                        IsEnabled="False"
+                                        BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
+                                        TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
+                                        CornerRadius="14"
+                                        HeightRequest="44"
+                                        Clicked="OnSaveReorderClicked"/>
+                                <Button Grid.Column="1"
+                                        Text="Cancel"
+                                        BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray800}}"
+                                        TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
+                                        CornerRadius="14"
+                                        HeightRequest="44"
+                                        Clicked="OnCancelReorderClicked"/>
+                            </Grid>
+                        </VerticalStackLayout>
                     </Border>
 
                     <!-- ════ Friends Mode ════ -->

@@ -28,6 +28,16 @@ public partial class FriendsPage : ContentPage
     /// </summary>
     private string? _draggingFriendId;
 
+    /// <summary>
+    /// The order being arranged, or null when no arrangement is in progress.
+    /// <para>
+    /// While this is set the list is drawn from it rather than from storage, and dragging a card moves
+    /// entries inside it. Nothing is written until Save, so leaving the mode by Cancel leaves the stored
+    /// order exactly as it was.
+    /// </para>
+    /// </summary>
+    private ReorderDraft? _reorderDraft;
+
     public FriendsPage()
     {
         InitializeComponent();
@@ -110,6 +120,10 @@ public partial class FriendsPage : ContentPage
             // Reordering mid-run could not affect the run already in flight, so it is not offered.
             SendOrderToggleButton.IsEnabled = !isRunning;
             SendOrderToggleButton.Opacity = isRunning ? 0.6 : 1.0;
+
+            // Applied on top of the busy state above, because an arrangement in progress closes the same
+            // controls for its own reason.
+            RefreshReorderControls();
         }
     }
 
@@ -121,13 +135,22 @@ public partial class FriendsPage : ContentPage
 
     private void LoadLists()
     {
-        var allItems = _settingsService.GetFriendsList();
+        // While an order is being arranged the list is drawn from the draft rather than from storage, which
+        // is what lets the arrangement be seen without being saved.
+        var reordering = _reorderDraft is not null;
+
+        var allItems = reordering
+            ? _reorderDraft!.Entries.ToList()
+            : _settingsService.GetFriendsList();
+
         var friendsAll = allItems.Where(f => !f.IsGroup).ToList();
         var groupsAll = allItems.Where(f => f.IsGroup).ToList();
 
         // ── Friends ──
-        SearchAndBulkRow.IsVisible = friendsAll.Count > 0;
-        var friendSearch = SearchFriendEntry.Text?.Trim() ?? string.Empty;
+        // Searching is off while arranging: dropping a card on a row that is only on screen because of a
+        // search would move it past entries the user cannot see.
+        SearchAndBulkRow.IsVisible = !reordering && friendsAll.Count > 0;
+        var friendSearch = reordering ? string.Empty : (SearchFriendEntry.Text?.Trim() ?? string.Empty);
         var friendsToShow = string.IsNullOrEmpty(friendSearch)
             ? friendsAll
             : friendsAll.Where(f =>
@@ -155,8 +178,8 @@ public partial class FriendsPage : ContentPage
         foreach (var friend in friendsToShow) FriendsListContainer.Children.Add(CreateEntryView(friend));
 
         // ── Groups ──
-        GroupBulkRow.IsVisible = groupsAll.Count > 0;
-        var groupSearch = SearchGroupEntry.Text?.Trim() ?? string.Empty;
+        GroupBulkRow.IsVisible = !reordering && groupsAll.Count > 0;
+        var groupSearch = reordering ? string.Empty : (SearchGroupEntry.Text?.Trim() ?? string.Empty);
         var groupsToShow = string.IsNullOrEmpty(groupSearch)
             ? groupsAll
             : groupsAll.Where(g =>
@@ -184,6 +207,7 @@ public partial class FriendsPage : ContentPage
 
         UpdateStatsCard(allItems);
         RefreshSendOrder(allItems);
+        RefreshReorderControls();
     }
 
     // ─── Send order ──────────────────────────────────────────────────────────
@@ -200,11 +224,14 @@ public partial class FriendsPage : ContentPage
     {
         var queue = FriendOrder.SendQueue(all ?? _settingsService.GetFriendsList());
 
-        // One entry needs no ordering, and nothing at all has nothing to show.
-        SendOrderCard.IsVisible = queue.Count >= 2;
+        // Hidden while an order is being arranged: the card is drawn from storage, and storage still holds
+        // the order being replaced, so showing it then would contradict the list.
+        SendOrderCard.IsVisible = _reorderDraft is null && queue.Count >= 2;
         SendOrderSubtitleLabel.Text = $"{queue.Count} entries, messaged top to bottom";
 
-        SendOrderToggleButton.Text = _sendOrderExpanded ? "Done" : "Reorder";
+        // "Show" rather than "Reorder": arranging the order is now done in the lists themselves, and a
+        // second button called Reorder that behaved differently - it saves as it goes - would be a trap.
+        SendOrderToggleButton.Text = _sendOrderExpanded ? "Hide" : "Show";
         SendOrderListContainer.IsVisible = _sendOrderExpanded;
         SendOrderHintLabel.IsVisible = _sendOrderExpanded;
 
@@ -404,14 +431,14 @@ public partial class FriendsPage : ContentPage
         drop.DragOver += (_, _) =>
         {
             if (IsDraggingAnotherEntry(friend.Id))
-                HighlightSendOrderDropTarget(row, true);
+                HighlightDropTarget(row, true);
         };
 
-        drop.DragLeave += (_, _) => HighlightSendOrderDropTarget(row, false);
+        drop.DragLeave += (_, _) => HighlightDropTarget(row, false);
 
         drop.Drop += (_, _) =>
         {
-            HighlightSendOrderDropTarget(row, false);
+            HighlightDropTarget(row, false);
 
             if (!IsDraggingAnotherEntry(friend.Id))
                 return;
@@ -439,11 +466,224 @@ public partial class FriendsPage : ContentPage
     /// Tints the row the finger is over, so a drop has a visible target instead of having to be aimed
     /// blind. A tint rather than the accent colour itself, so the row's own text stays readable.
     /// </summary>
-    private void HighlightSendOrderDropTarget(Border row, bool highlighted)
+    private void HighlightDropTarget(Border row, bool highlighted)
     {
         row.SetAppThemeColor(Border.BackgroundColorProperty,
             highlighted ? GetThemeColor("PrimarySubtle", "#FFE4EA") : GetThemeColor("Gray100", "#F3F4F6"),
             highlighted ? GetThemeColor("PrimarySubtleDark", "#3AFE2C55") : GetThemeColor("Gray900", "#111827"));
+    }
+
+    // ─── Arranging the order in the list itself ──────────────────────────────
+
+    /// <summary>
+    /// Opens the arrangement. The stored order is copied into a draft, and from here on the list is drawn
+    /// from that copy, so nothing done in the mode reaches storage until Save.
+    /// </summary>
+    private void OnToggleReorderModeClicked(object? sender, EventArgs e)
+    {
+        if (_lastIsRunning || _reorderDraft is not null)
+            return;
+
+        _reorderDraft = ReorderDraft.Begin(_settingsService.GetFriendsList());
+
+        // Both of these write to storage, so they are closed for the duration.
+        AddFriendPanel.IsVisible = false;
+        AddGroupPanel.IsVisible = false;
+
+        // The card reads the stored order, which is now the order being replaced.
+        _sendOrderExpanded = false;
+
+        LoadLists();
+    }
+
+    /// <summary>
+    /// Writes the arranged order.
+    /// <para>
+    /// The mode stays open when the write fails, so the arrangement is not lost along with the error
+    /// message - the user can try Save again.
+    /// </para>
+    /// </summary>
+    private async void OnSaveReorderClicked(object? sender, EventArgs e)
+    {
+        var draft = _reorderDraft;
+        if (draft is null)
+            return;
+
+        if (!_settingsService.TrySaveFriendsList(draft.ToSave(), out var error))
+        {
+            await DisplayAlert("Could not save order", error ?? "The new order was not saved.", "OK");
+            return;
+        }
+
+        _reorderDraft = null;
+        LoadLists();
+    }
+
+    /// <summary>
+    /// Drops the arrangement. Nothing was written while it was open, so there is nothing to undo.
+    /// </summary>
+    private void OnCancelReorderClicked(object? sender, EventArgs e)
+    {
+        if (_reorderDraft is null)
+            return;
+
+        _reorderDraft = null;
+        LoadLists();
+    }
+
+    /// <summary>
+    /// Puts the arranging state on screen: the banner, whether Save has anything to save, and the controls
+    /// that would write to storage while an arrangement is staged.
+    /// </summary>
+    private void RefreshReorderControls()
+    {
+        var reordering = _reorderDraft is not null;
+
+        ReorderBanner.IsVisible = reordering;
+
+        // Save stays switched off until something has actually moved, so it cannot write an order identical
+        // to the one already stored - and a user who taps it before dragging anything sees why.
+        SaveOrderButton.IsEnabled = reordering && _reorderDraft!.HasChanges;
+
+        // Hidden while arranging: Save and Cancel are the only two ways out, and a third button that also
+        // left the mode could be taken for one of them.
+        ReorderToggleButton.IsVisible = !reordering;
+        ReorderToggleButton.IsEnabled = !_lastIsRunning;
+        ReorderToggleButton.Opacity = _lastIsRunning ? 0.6 : 1.0;
+
+        // A write during a staged arrangement would be saved against the order being replaced.
+        var actionsEnabled = !reordering && !_lastIsRunning;
+        ActionButtonsGrid.IsEnabled = actionsEnabled;
+        ActionButtonsGrid.Opacity = actionsEnabled ? 1.0 : 0.6;
+        GroupActionButtonsGrid.IsEnabled = actionsEnabled;
+        GroupActionButtonsGrid.Opacity = actionsEnabled ? 1.0 : 0.6;
+    }
+
+    /// <summary>
+    /// One card while the order is being arranged: a handle and the entry, and nothing that writes.
+    /// <para>
+    /// The per-row buttons are left out rather than dimmed. None of them can be used in this mode, and
+    /// leaving them out gives the card more room to be dragged by.
+    /// </para>
+    /// </summary>
+    private View CreateReorderRow(FriendConfig friend)
+    {
+        var border = new Border
+        {
+            StrokeShape = new RoundRectangle { CornerRadius = 16 },
+            Stroke = Colors.Transparent,
+            Padding = new Thickness(14, 12)
+        };
+        border.SetAppThemeColor(Border.BackgroundColorProperty,
+            GetThemeColor("Gray100", "#F3F4F6"),
+            GetThemeColor("Gray900", "#111827"));
+
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitionCollection
+            {
+                new ColumnDefinition { Width = new GridLength(26) },
+                new ColumnDefinition { Width = GridLength.Star }
+            },
+            ColumnSpacing = 8
+        };
+
+        var handle = new Label
+        {
+            Text = "⠿",
+            FontSize = 18,
+            HorizontalTextAlignment = TextAlignment.Center,
+            VerticalTextAlignment = TextAlignment.Center,
+            VerticalOptions = LayoutOptions.Center
+        };
+        handle.SetAppThemeColor(Label.TextColorProperty,
+            GetThemeColor("Gray400", "#8B8F96"), GetThemeColor("Gray400", "#8B8F96"));
+        grid.Children.Add(handle);
+
+        var displayName = string.IsNullOrEmpty(friend.DisplayName) ? friend.Username : friend.DisplayName;
+        var infoStack = new VerticalStackLayout { Spacing = 3, VerticalOptions = LayoutOptions.Center };
+        infoStack.Children.Add(new Label { Text = displayName, FontSize = 15, FontFamily = "InterSemiBold" });
+
+        // A disabled entry is listed here too, and says so: it is still part of the list and can still be
+        // moved, but it will not be messaged.
+        var subtitle = friend.IsGroup ? "Group" : $"@{friend.Username}";
+        if (!friend.IsEnabled)
+            subtitle += " · disabled";
+
+        infoStack.Children.Add(new Label
+        {
+            Text = subtitle,
+            FontSize = 13,
+            TextColor = GetThemeColor("Gray400", "#8B8F96")
+        });
+
+        Grid.SetColumn(infoStack, 1);
+        grid.Children.Add(infoStack);
+
+        border.Content = grid;
+
+        AttachReorderDragAndDrop(border, friend);
+        return border;
+    }
+
+    /// <summary>
+    /// Makes one card draggable onto another card of the same kind. The move is staged, so this writes
+    /// nothing: it redraws the list from the draft.
+    /// </summary>
+    private void AttachReorderDragAndDrop(Border row, FriendConfig friend)
+    {
+        var drag = new DragGestureRecognizer();
+
+        drag.DragStarting += (_, _) =>
+        {
+            _draggingFriendId = friend.Id;
+            row.Opacity = 0.4;
+        };
+
+        drag.DropCompleted += (_, _) =>
+        {
+            _draggingFriendId = null;
+            row.Opacity = 1.0;
+        };
+
+        row.GestureRecognizers.Add(drag);
+
+        var drop = new DropGestureRecognizer();
+
+        drop.DragOver += (_, _) =>
+        {
+            if (IsDraggingAnotherEntry(friend.Id))
+                HighlightDropTarget(row, true);
+        };
+
+        drop.DragLeave += (_, _) => HighlightDropTarget(row, false);
+
+        drop.Drop += (_, _) =>
+        {
+            HighlightDropTarget(row, false);
+
+            if (!IsDraggingAnotherEntry(friend.Id))
+                return;
+
+            // Read before the move, which rebuilds every row and so replaces the handler holding this.
+            var draggedId = _draggingFriendId;
+            if (!string.IsNullOrEmpty(draggedId))
+                MoveStagedEntry(draggedId, friend.Id);
+        };
+
+        row.GestureRecognizers.Add(drop);
+    }
+
+    /// <summary>
+    /// Applies one drop to the arrangement. Storage is not touched: the list is redrawn from the draft, and
+    /// Save is what writes it.
+    /// </summary>
+    private void MoveStagedEntry(string draggedId, string targetId)
+    {
+        if (_reorderDraft is null || !_reorderDraft.Move(draggedId, targetId))
+            return;
+
+        LoadLists();
     }
 
     private void UpdateStatsCard(List<FriendConfig> allItems)
@@ -471,6 +711,10 @@ public partial class FriendsPage : ContentPage
 
     private View CreateEntryView(FriendConfig friend)
     {
+        // While the order is being arranged a row is a card to be moved rather than an entry to be managed.
+        if (_reorderDraft is not null)
+            return CreateReorderRow(friend);
+
         var border = new Border
         {
             StrokeShape = new RoundRectangle { CornerRadius = 16 },

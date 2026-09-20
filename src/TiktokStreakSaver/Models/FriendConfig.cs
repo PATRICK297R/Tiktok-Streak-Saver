@@ -63,6 +63,27 @@ public class FriendConfig
 
     /// <summary>True when this entry carries its own message instead of the shared one.</summary>
     public bool HasCustomMessage => !string.IsNullOrWhiteSpace(CustomMessage);
+
+    /// <summary>
+    /// A copy of this entry.
+    /// <para>
+    /// Used while an order is being arranged but not yet saved. The draft has to be able to move entries
+    /// around without touching the objects the rest of the app is holding, or an arrangement the user
+    /// cancelled would still have changed them.
+    /// </para>
+    /// </summary>
+    public FriendConfig Clone() => new()
+    {
+        Id = Id,
+        Username = Username,
+        DisplayName = DisplayName,
+        IsEnabled = IsEnabled,
+        LastMessageSent = LastMessageSent,
+        SuccessCount = SuccessCount,
+        FailureCount = FailureCount,
+        IsGroup = IsGroup,
+        CustomMessage = CustomMessage
+    };
 }
 
 /// <summary>
