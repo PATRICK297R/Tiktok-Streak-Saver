@@ -30,6 +30,9 @@ public partial class ImportContactsPage : ContentPage
     private int _lastReportedCount = -1;
     private List<FriendConfig> _found = new();
 
+    /// <summary>When polling began, so the page can give up instead of waiting forever.</summary>
+    private DateTime _pollStartedAt;
+
     public ImportContactsPage()
     {
         InitializeComponent();
@@ -66,7 +69,25 @@ public partial class ImportContactsPage : ContentPage
         }
 
         StartPolling();
+
+        // Configure BEFORE the first request, mirroring LoginPage. The user agent in particular has
+        // to match the one the session cookies were issued against: setting it after the first load
+        // lets that load go out as a different client, and TikTok answers with a login wall instead
+        // of the inbox.
+        TikTokWebViewHelper.ConfigureWebView(ScanWebView, ResolveUserAgent());
+
         ScanWebView.Source = new UrlWebViewSource { Url = TikTokWebViewHelper.MessagesUrl };
+    }
+
+    /// <summary>
+    /// The user agent the session was created with, falling back to the very same constant the login
+    /// page uses. A different string would present a different client and the session would be
+    /// rejected.
+    /// </summary>
+    private string ResolveUserAgent()
+    {
+        var loginUserAgent = _sessionService.GetLoginUserAgent();
+        return string.IsNullOrWhiteSpace(loginUserAgent) ? AppConstants.DesktopChromeUserAgent : loginUserAgent;
     }
 
     protected override void OnDisappearing()
@@ -79,17 +100,45 @@ public partial class ImportContactsPage : ContentPage
         TikTokWebViewHelper.TearDownLoginWebView(ScanWebView);
     }
 
-    private void OnScanNavigated(object? sender, WebNavigatedEventArgs e)
+    private void OnScanNavigating(object? sender, WebNavigatingEventArgs e)
     {
-        // The cookie store and user agent have to match the ones captured at login, or TikTok sees a
-        // different client and refuses the session.
-        TikTokWebViewHelper.ConfigureWebView(ScanWebView, _sessionService.GetLoginUserAgent());
-
-        // Injecting on every navigation would restart a finished scan, so it happens once per scan.
-        if (_scriptInjected || _scanFinished || string.IsNullOrEmpty(_scanScript))
+        var url = e.Url;
+        if (string.IsNullOrEmpty(url))
             return;
 
-        if (e.Url?.Contains("/messages", StringComparison.OrdinalIgnoreCase) != true)
+        if (WebViewNavigationPolicy.IsLoadable(url))
+            return;
+
+        // TikTok tries to open its own app with custom schemes, which a WebView cannot load - Android
+        // shows a blank error page instead and the scan is stranded. Cancel and follow the real
+        // destination when the URL carries one.
+        e.Cancel = true;
+
+        var target = WebViewNavigationPolicy.ExtractHttpDestination(url);
+        if (target != null)
+            ScanWebView.Source = target;
+    }
+
+    private async void OnScanNavigated(object? sender, WebNavigatedEventArgs e)
+    {
+        if (_scanFinished)
+            return;
+
+        // A session can be rejected even when the app still believes it is signed in. Without this
+        // the page would sit waiting for a chat list that is never coming.
+        if (WebViewNavigationPolicy.IsLoginWall(e.Url))
+        {
+            StopPolling();
+            ScanStatusLabel.Text = "TikTok asked you to sign in again.";
+            await DisplayAlert("Sign in again",
+                "TikTok no longer accepts the saved session. Sign in again from the Profile page, then come back to import.",
+                "OK");
+            await Navigation.PopAsync();
+            return;
+        }
+
+        // Injecting on every navigation would restart a finished scan, so it happens once.
+        if (_scriptInjected || string.IsNullOrEmpty(_scanScript))
             return;
 
         _scriptInjected = true;
@@ -122,6 +171,7 @@ public partial class ImportContactsPage : ContentPage
         }
 
         _pollTimer.Start();
+        _pollStartedAt = DateTime.Now;
     }
 
     private void StopPolling()
@@ -155,7 +205,14 @@ public partial class ImportContactsPage : ContentPage
 
         var json = ContactScanReader.NormalizeJavaScriptResult(raw);
         if (!ContactScanReader.TryParse(json, out var scan, out _) || scan is null)
+        {
+            // The scanner has produced nothing at all. If that persists, the page has to say so
+            // rather than leave "Reading your chats…" on screen forever.
+            if (DateTime.Now - _pollStartedAt > ScanTimeout)
+                await GiveUpOnScanAsync("The inbox could not be read");
+
             return;
+        }
 
         if (scan.Items.Count != _lastReportedCount)
         {
@@ -165,6 +222,27 @@ public partial class ImportContactsPage : ContentPage
 
         if (scan.Done)
             ShowResults(scan);
+    }
+
+    /// <summary>
+    /// How long to wait for the scanner before reporting that it did not work. Generous, because a
+    /// long inbox means many scroll passes.
+    /// </summary>
+    private static readonly TimeSpan ScanTimeout = TimeSpan.FromSeconds(90);
+
+    private async Task GiveUpOnScanAsync(string title)
+    {
+        if (_scanFinished)
+            return;
+
+        _scanFinished = true;
+        StopPolling();
+
+        ScanStatusLabel.Text = "Nothing could be read from the inbox.";
+        await DisplayAlert(title,
+            "TikTok's inbox did not respond to reading. Open the inbox once from the Dashboard, make sure you are signed in, then try again.",
+            "OK");
+        await Navigation.PopAsync();
     }
 
     // ─── Results ─────────────────────────────────────────────────────────────

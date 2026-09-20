@@ -108,66 +108,17 @@ public partial class LoginPage : ContentPage
 
         // Every scheme the login page legitimately navigates to. Anything else is a hand-off to
         // another installed app rather than page content.
-        if (IsWebViewLoadableScheme(url))
+        if (WebViewNavigationPolicy.IsLoadable(url))
             return;
 
-        // TikTok signals its native app to open with custom schemes (snssdk1180://, snssdk1233://,
-        // intent://, ...). A WebView cannot load those: Android shows a blank
-        // "net::ERR_UNKNOWN_URL_SCHEME" error page in their place, which strands the login flow and
-        // leaves the user with no way forward. Cancel the hand-off; when the URL carries the real
-        // destination in its params_url query parameter, follow that instead.
+        // See WebViewNavigationPolicy: a WebView cannot load TikTok's app hand-off schemes, and
+        // Android shows a blank error page in their place, which strands the login flow. Cancel the
+        // hand-off and follow the real destination when the URL carries it.
         e.Cancel = true;
 
-        var target = ExtractParamsUrl(url);
+        var target = WebViewNavigationPolicy.ExtractHttpDestination(url);
         if (target != null)
             TikTokWebView.Source = target;
-    }
-
-    private static bool IsWebViewLoadableScheme(string url)
-    {
-        foreach (var scheme in LoadableSchemes)
-        {
-            if (url.StartsWith(scheme, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-
-        return false;
-    }
-
-    private static readonly string[] LoadableSchemes =
-    {
-        "http://", "https://", "about:", "data:", "blob:", "file:", "content:", "javascript:"
-    };
-
-    /// <summary>
-    /// Pulls the http(s) destination out of an app hand-off URL, e.g.
-    /// <c>snssdk1233://...?params_url=https%3A%2F%2Fwww.tiktok.com%2F&amp;...</c>. Returns null when the
-    /// URL has no usable http(s) destination.
-    /// </summary>
-    private static string? ExtractParamsUrl(string url)
-    {
-        const string key = "params_url=";
-        var index = url.IndexOf(key, StringComparison.OrdinalIgnoreCase);
-        if (index < 0)
-            return null;
-
-        var value = url.Substring(index + key.Length);
-        var end = value.IndexOfAny(new[] { '&', '#' });
-        if (end >= 0)
-            value = value.Substring(0, end);
-
-        string decoded;
-        try
-        {
-            decoded = Uri.UnescapeDataString(value);
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Could not decode params_url '{value}': {ex.Message}");
-            return null;
-        }
-
-        return decoded.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? decoded : null;
     }
 
     private async void OnBackClicked(object? sender, EventArgs e)
