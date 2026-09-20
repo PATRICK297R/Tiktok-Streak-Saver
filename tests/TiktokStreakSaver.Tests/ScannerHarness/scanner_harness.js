@@ -31,6 +31,32 @@ const script = fs.readFileSync(scriptPath, 'utf8');
 //              for a group, none at all for a group that links to no single account
 //   memberText participant count, as a group's header shows it
 //   blankReads how many reads still show the bare "@" the header renders before the account loads
+// A list long enough to need scrolling, for the two scenarios below. Generated because what matters is
+// the count and the order, not the names.
+const scrollingInbox = Array.from({ length: 24 }, (_, i) => ({
+    name: 'Chat ' + String(i + 1).padStart(2, '0'),
+    links: ['/@user' + String(i + 1).padStart(2, '0')]
+}));
+
+const scrollingExpected = Array.from({ length: 24 }, (_, i) => ({
+    displayName: 'Chat ' + String(i + 1).padStart(2, '0'),
+    isGroup: false,
+    username: 'user' + String(i + 1).padStart(2, '0')
+}));
+
+// A longer inbox for the case where a scroll moves the list by more than the old guess of ten rows. The
+// names are what make a missing chat visible in the failure output.
+const longInbox = Array.from({ length: 40 }, (_, i) => ({
+    name: 'Chat ' + String(i + 1).padStart(2, '0'),
+    links: ['/@user' + String(i + 1).padStart(2, '0')]
+}));
+
+const longExpected = Array.from({ length: 40 }, (_, i) => ({
+    displayName: 'Chat ' + String(i + 1).padStart(2, '0'),
+    isGroup: false,
+    username: 'user' + String(i + 1).padStart(2, '0')
+}));
+
 const scenarios = [
     {
         title: 'a person, a group with no link, a group with a member stack, a group with a count',
@@ -144,6 +170,47 @@ const scenarios = [
         expectedLog: ['named by its handle']
     },
     {
+        // The bug the device log shows. Ten rows are rendered, then nineteen, then twenty-four, with the
+        // rows already read still in place - and the scan re-read ten of them on every scroll because it
+        // guessed where to resume from. It resumes at the first row without a mark now, so each chat is
+        // opened exactly once.
+        title: 'a list that grows as it is scrolled is read once',
+        chats: scrollingInbox,
+        windowSize: 10,
+        revealPerScroll: 9,
+        eachOpenedOnce: true,
+        expected: scrollingExpected
+    },
+    {
+        // The other way a list can behave: the same row elements are handed whatever is scrolled into
+        // view, so a row carries the mark of the chat that used to be in it. The mark is not trusted
+        // then and the row is read again - a few repeat opens, which is the safe direction - but every
+        // chat is still found, and none is skipped.
+        title: 'a list that recycles its rows still finds every chat',
+        chats: scrollingInbox,
+        windowSize: 10,
+        revealPerScroll: 9,
+        recycles: true,
+        // Six rows come back into view across the two scrolls and are read again, which is the price of
+        // not trusting a mark on a row that may have been handed another chat. The point of the scenario
+        // is the line above it: every chat is still found.
+        maxRepeatOpens: 8,
+        expected: scrollingExpected
+    },
+    {
+        // The dangerous half of the same bug. When a scroll moves the list further than the old guess of
+        // ten rows, resuming ten rows back from the end of the screen lands past the first chat that has
+        // not been read - and those chats were never recorded at all. Twenty-four rows move by eighteen
+        // here, so six of them were in that gap.
+        title: 'a list that jumps further than a screen does not lose chats',
+        chats: longInbox,
+        windowSize: 24,
+        revealPerScroll: 18,
+        recycles: true,
+        maxRepeatOpens: 12,
+        expected: longExpected
+    },
+    {
         title: 'a header still loading is waited for, not recorded as "@"',
         chats: [
             { name: 'Ken Panzz', links: ['/@kenpanzz'], blankReads: 2 },
@@ -174,7 +241,29 @@ const scenarios = [
 // ─── Stub page ───────────────────────────────────────────────────────────────
 
 function buildSandbox(scenario) {
-    const state = { openIndex: -1, reads: [] };
+    const total = scenario.chats.length;
+
+    // How many rows the list renders at once, and how many more each scroll brings into view. A
+    // scenario that sets neither has no scrolling at all, which is how the earlier scenarios stay as
+    // they were.
+    const windowSize = Math.min(scenario.windowSize || total, total);
+    const revealPerScroll = scenario.revealPerScroll || windowSize;
+
+    // Whether the list reuses its row elements for whatever is scrolled into view, or keeps the rows it
+    // has already rendered and adds the new ones below them. Both were seen on a device, and the second
+    // is the one the log shows: ten rows, then nineteen, then twenty-four.
+    const recycles = !!scenario.recycles;
+
+    const state = {
+        openIndex: -1,
+        reads: [],
+        // How many times each chat was opened, so a test can tell a scan that read everything once from
+        // one that went back over what it had already read.
+        opened: new Array(total).fill(0),
+        revealed: windowSize,
+        windowStart: 0,
+        exhausted: total <= windowSize
+    };
 
     const chatOf = (index) => (index >= 0 ? scenario.chats[index] : null);
     const isBlank = (index) => state.reads[index] <= ((chatOf(index) || {}).blankReads || 0);
@@ -185,10 +274,82 @@ function buildSandbox(scenario) {
     }));
 
     const container = {
-        scrollTop: 0,
-        clientHeight: 100,
-        scrollHeight: 100,
-        parentElement: null
+        parentElement: null,
+        clientHeight: windowSize,
+        get scrollHeight() { return total; },
+
+        _scrollTop: 0,
+        get scrollTop() { return this._scrollTop; },
+
+        // Scrolling is what brings the next screen into view, and it stops when there is nothing left -
+        // which is how the scanner learns it has reached the end of the list.
+        set scrollTop(value) {
+            if (state.exhausted) return;
+
+            const next = Math.max(0, value);
+            if (next === this._scrollTop) return;
+            this._scrollTop = next;
+
+            if (recycles) {
+                state.windowStart = Math.min(total - windowSize, state.windowStart + revealPerScroll);
+                if (state.windowStart + windowSize >= total) state.exhausted = true;
+            } else {
+                state.revealed = Math.min(total, state.revealed + revealPerScroll);
+                if (state.revealed >= total) state.exhausted = true;
+            }
+        }
+    };
+
+    // One row element per chat, kept once made: the list grows by adding rows, so the ones already read
+    // are still the same elements and still carry whatever the scanner wrote on them.
+    const elements = [];
+
+    // Or one element per slot, handed a different chat as the window moves - the recycling case, where a
+    // mark left on a row points at the chat that used to be in it.
+    const pool = [];
+
+    const rowFor = (chatIndex, slot) => {
+        const store = recycles ? pool : elements;
+        const key = recycles ? slot : chatIndex;
+
+        if (!store[key]) {
+            store[key] = {
+                parentElement: container,
+                closest: () => null,
+                index: chatIndex,
+
+                // A row's text is what the scanner compares against the mark it left, so the stub has to
+                // have it: a recycled row showing a different chat reads differently, and that difference
+                // is the only thing standing between "already read" and skipping a chat that never was.
+                get textContent() {
+                    const chat = chatOf(store[key].index);
+                    return chat ? chat.name + ' · sent a message' : '';
+                },
+                get innerText() { return this.textContent; },
+
+                click: () => {
+                    state.opened[store[key].index] = (state.opened[store[key].index] || 0) + 1;
+                    state.openIndex = store[key].index;
+                }
+            };
+        }
+
+        store[key].index = chatIndex;
+        return store[key];
+    };
+
+    const rowsFor = () => {
+        const rows = [];
+
+        if (recycles) {
+            for (let slot = 0; slot < windowSize && state.windowStart + slot < total; slot++)
+                rows.push(rowFor(state.windowStart + slot, slot));
+        } else {
+            for (let index = 0; index < state.revealed; index++)
+                rows.push(rowFor(index, index));
+        }
+
+        return rows;
     };
 
     const header = {
@@ -232,12 +393,6 @@ function buildSandbox(scenario) {
         }
     };
 
-    const rows = scenario.chats.map((chat, index) => ({
-        parentElement: container,
-        closest: () => null,
-        click: () => { state.openIndex = index; }
-    }));
-
     // Profile links outside the header, which is what a group's message pane holds: one per member
     // who has written. The scanner must ignore these - taking one of them is what turned a group
     // into a friend named after a member.
@@ -249,7 +404,7 @@ function buildSandbox(scenario) {
     const document = {
         body: {},
         querySelectorAll: (selector) => {
-            if (selector.indexOf('dm-new-conversation-item') !== -1) return rows;
+            if (selector.indexOf('dm-new-conversation-item') !== -1) return rowsFor();
             if (selector.indexOf('/@') !== -1) return paneLinks();
             return [];
         },
@@ -275,7 +430,7 @@ function buildSandbox(scenario) {
     sandbox.window = sandbox;
     sandbox.addEventListener = () => { };
 
-    return sandbox;
+    return { sandbox, state };
 }
 
 // ─── Runner ──────────────────────────────────────────────────────────────────
@@ -299,7 +454,7 @@ const describe = (item) => (item.isGroup
     : '@' + item.username + ' "' + item.displayName + '"');
 
 function run(scenario) {
-    const sandbox = buildSandbox(scenario);
+    const { sandbox, state } = buildSandbox(scenario);
     vm.createContext(sandbox);
 
     try {
@@ -320,7 +475,7 @@ function run(scenario) {
                 return setTimeout(poll, 5);
             }
 
-            resolve(scan);
+            resolve({ scan, state });
         };
 
         poll();
@@ -331,7 +486,7 @@ function run(scenario) {
 const keyOf = (item) => (item.isGroup ? 'group:' + item.displayName : 'user:' + item.username);
 const wantKey = (want) => (want.isGroup ? 'group:' + want.displayName : 'user:' + want.username);
 
-function check(scenario, scan) {
+function check(scenario, scan, state) {
     const lines = scan.log || [];
     const items = scan.items || [];
 
@@ -370,6 +525,24 @@ function check(scenario, scan) {
         }
     }
 
+    // The scrolling case: every chat opened exactly once, which is what stops a scroll from reading the
+    // same conversations over again. The old index guess re-opened ten of them per scroll.
+    const repeats = state.opened.reduce((sum, count) => sum + Math.max(0, count - 1), 0);
+
+    if (scenario.eachOpenedOnce && repeats > 0) {
+        const repeated = scenario.chats
+            .map((chat, index) => ({ chat, count: state.opened[index] }))
+            .filter((entry) => entry.count > 1)
+            .map((entry) => entry.chat.name + ' x' + entry.count);
+
+        return 'chats were opened more than once: ' + repeated.join(', ');
+    }
+
+    if (scenario.maxRepeatOpens !== undefined && repeats > scenario.maxRepeatOpens) {
+        return 'the scan opened chats again ' + repeats + ' times, more than the '
+            + scenario.maxRepeatOpens + ' a scroll should cost';
+    }
+
     return '';
 }
 
@@ -378,8 +551,8 @@ function check(scenario, scan) {
     let passed = 0;
 
     for (const scenario of scenarios) {
-        const scan = await run(scenario);
-        const problem = check(scenario, scan);
+        const { scan, state } = await run(scenario);
+        const problem = check(scenario, scan, state);
 
         if (problem) {
             failures.push({ scenario, scan, problem });
@@ -387,7 +560,9 @@ function check(scenario, scan) {
         }
 
         passed++;
-        console.log('PASS ' + scenario.title + ' (' + scan.items.length + ' chats)');
+        const repeats = state.opened.reduce((sum, count) => sum + Math.max(0, count - 1), 0);
+        console.log('PASS ' + scenario.title + ' (' + scan.items.length + ' chats, '
+            + repeats + ' repeat opens)');
         scan.items.forEach((item) => console.log('  CHAT ' + describe(item)));
     }
 

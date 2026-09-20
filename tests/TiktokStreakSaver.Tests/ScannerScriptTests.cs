@@ -107,6 +107,9 @@ public class ScannerScriptTests
 
     [Theory]
     [InlineData("findHeader")]
+    [InlineData("rowText")]
+    [InlineData("rowIsRead")]
+    [InlineData("markRowRead")]
     [InlineData("headerProfileLink")]
     [InlineData("distinctProfileLinks")]
     [InlineData("avatarCount")]

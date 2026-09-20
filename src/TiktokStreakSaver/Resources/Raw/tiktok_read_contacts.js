@@ -61,6 +61,12 @@
     var emptyScrolls = 0;
     var seen = {};
 
+    // The row currently being opened, and the text it showed just before the click. Kept so the row can
+    // be stamped once its chat has been read - and stamped with the text it had while it was still the
+    // row that was clicked, because opening a chat can make the list move under it.
+    var rowBeingRead = null;
+    var rowBeingReadText = '';
+
     var push = function () {
         try {
             scan.url = location.href;
@@ -105,6 +111,38 @@
     var text = function (el) {
         if (!el) return '';
         return (el.textContent || '').replace(/\s+/g, ' ').trim();
+    };
+
+    // A row's own text, short enough to compare cheaply.
+    var rowText = function (row) {
+        var raw = (row && (row.innerText || row.textContent)) || '';
+        return raw.replace(/\s+/g, ' ').trim().substring(0, 120);
+    };
+
+    // Where a row remembers the chat it was read as, and the text it showed at the time.
+    var ROW_MARK = '__saverRead';
+
+    // Whether this row is one already read, so it can be passed over without opening it again.
+    //
+    // The text has to still match. A list that recycles its nodes hands a row a different conversation
+    // while the row keeps the mark of the old one, and trusting that mark would skip a chat that was
+    // never read - the one mistake here that loses a contact. Anything that does not match is simply
+    // read again, which costs one click and is covered by the dedupe.
+    var rowIsRead = function (row) {
+        var mark = row && row[ROW_MARK];
+        if (!mark) return false;
+        if (mark.text !== rowText(row)) return false;
+        return !!mark.key && !!seen[mark.key];
+    };
+
+    var markRowRead = function (row, textWhenClicked, entry) {
+        if (!row || !entry) return;
+
+        try {
+            row[ROW_MARK] = { key: keyOf(entry), text: textWhenClicked };
+        } catch (e) {
+            // A frozen node only means this row is read again; the dedupe still covers it.
+        }
     };
 
     var findItems = function () {
@@ -264,6 +302,18 @@
             reportPageShape('with the list');
         }
 
+        // Rows already read are passed over without opening them again. This is what keeps a scroll from
+        // reading the same conversations a second time: after the list moves, the rows that overlap with
+        // the previous screen are known, and only the ones below them are opened.
+        var skipped = 0;
+        while (chatIndex < items.length && rowIsRead(items[chatIndex])) {
+            chatIndex++;
+            skipped++;
+        }
+
+        if (skipped > 0)
+            log('Skipped ' + skipped + ' rows already read');
+
         if (chatIndex >= items.length) {
             // The visible rows are all visited; try to reveal more.
             if (scrollForMore(items)) return;
@@ -273,6 +323,9 @@
 
         var item = items[chatIndex];
         if (!item) { chatIndex++; schedule(); return; }
+
+        rowBeingRead = item;
+        rowBeingReadText = rowText(item);
 
         // Counted here rather than after opening, so a chat that never opens still counts as an
         // attempt and cannot loop forever.
@@ -398,6 +451,14 @@
     var settle = function (entry) {
         var outcome = record(entry);
 
+        // Stamped for a chat already known as well as a new one: either way this row has been read, and
+        // opening it again after a scroll would be wasted work.
+        if (outcome === 'new' || outcome === 'duplicate')
+            markRowRead(rowBeingRead, rowBeingReadText, entry);
+
+        rowBeingRead = null;
+        rowBeingReadText = '';
+
         if (outcome === 'new') {
             lastIdentifiedKey = keyOf(entry);
             consecutiveMisses = 0;
@@ -435,20 +496,24 @@
         if (emptyScrolls > 6) return false;
 
         var before = container.scrollTop;
-        var previousCount = items.length;
-        // One viewport at a time, never scrollHeight: TikTok's list recycles its DOM nodes and
-        // jumping to the bottom skips conversations.
+        // One viewport at a time, never scrollHeight: jumping to the bottom skips conversations.
         container.scrollTop += container.clientHeight * 2;
 
         if (container.scrollTop <= before) return false;
 
         setTimeout(function () {
             var refreshed = findItems();
-            // Resume a little before the end of what was already visible, because the recycled list
-            // overlaps between screens.
-            var resumeFrom = Math.max(0, previousCount - 10);
-            chatIndex = Math.min(resumeFrom, Math.max(0, refreshed.length - 1));
-            log('Scrolled; continuing from chat ' + (chatIndex + 1) + ' of ' + refreshed.length);
+
+            // Back to the top of what is rendered, and let the walk pass over the rows it has already
+            // read. Where reading resumes is therefore measured rather than guessed: the previous
+            // screen's rows carry their marks, so the first row without one is the next unread chat -
+            // whether the list kept its rows and grew, or moved a whole screen's worth.
+            //
+            // The guess that used to be here ("ten rows back from the end") was wrong in the direction
+            // that costs: it went further back than the overlap, so a scroll re-opened conversations
+            // that had already been read.
+            chatIndex = 0;
+            log('Scrolled; ' + refreshed.length + ' rows in view');
             schedule();
         }, 1500);
 
@@ -680,7 +745,7 @@
 
     var finish = function (reason) {
         scan.done = true;
-        log('Finished: ' + scan.items.length + ' chats (' + reason + ')');
+        log('Finished: ' + scan.items.length + ' chats (opened ' + scan.attempts + ', ' + reason + ')');
     };
 
     // The first step waits for the WebView to lay the page out before looking for rows.
