@@ -49,6 +49,16 @@ public class ContactScanDto
 public static class ContactScanReader
 {
     /// <summary>
+    /// Name the scanner calls from inside the page to report back.
+    /// <para>
+    /// Lives here rather than on the page so that the test suite can compare it against the bundled
+    /// script. The name appears in two languages, and a mismatch fails silently - the script runs,
+    /// the reports go nowhere, and the page concludes the scanner never started.
+    /// </para>
+    /// </summary>
+    public const string BridgeName = "SaverScan";
+
+    /// <summary>
     /// Normalises what <c>EvaluateJavaScriptAsync</c> hands back before it is parsed.
     /// <para>
     /// Android returns the platform's JSON encoding of the JavaScript value, so a script that

@@ -146,4 +146,20 @@ public class ScriptPreparationTests
     {
         Assert.Equal(string.Empty, ScriptPreparation.ForInjection(script));
     }
+
+    [Fact]
+    public void TheBundledScannerReportsThroughTheBridgeTheAppRegisters()
+    {
+        var path = FindScannerScript();
+        if (path is null)
+            return;
+
+        var script = System.IO.File.ReadAllText(path);
+
+        // The bridge name exists in two languages, and a mismatch between them is silent: the script
+        // would run, its reports would go nowhere, and the page would conclude the scanner never
+        // started. Comparing them here is the only place that can catch it.
+        Assert.Contains($"typeof {ContactScanReader.BridgeName}", script);
+        Assert.Contains($"{ContactScanReader.BridgeName}.report(", script);
+    }
 }

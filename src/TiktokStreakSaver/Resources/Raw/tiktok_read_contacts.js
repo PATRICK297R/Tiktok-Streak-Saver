@@ -44,9 +44,29 @@
     var startedAt = Date.now();
     var emptyScrolls = 0;
 
+    // Publishes the current state to the app.
+    //
+    // The app receives this through a JavaScript interface rather than by evaluating expressions in
+    // the page: that is the mechanism the sending flow already uses, and it is the one proven to work
+    // on this platform. Pushing also means the app hears about the very first line the scanner logs,
+    // so "the script never ran" can never be mistaken for "the inbox had nothing in it".
+    var push = function () {
+        try {
+            scan.url = location.href;
+            scan.ua = navigator.userAgent;
+
+            if (typeof SaverScan !== 'undefined' && SaverScan && SaverScan.report) {
+                SaverScan.report(JSON.stringify(scan));
+            }
+        } catch (e) {
+            // A page that is mid-navigation can reject the call; the next pass will try again.
+        }
+    };
+
     var log = function (msg) {
         scan.log.push(msg);
         if (scan.log.length > 60) scan.log.shift();
+        push();
     };
 
     var text = function (el) {
