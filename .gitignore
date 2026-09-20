@@ -416,3 +416,6 @@ FodyWeavers.xsd
 # .NET test results
 TestResults/
 *.trx
+
+# Exported run logs, dropped here by hand when reporting a problem. Not source.
+log.txt
