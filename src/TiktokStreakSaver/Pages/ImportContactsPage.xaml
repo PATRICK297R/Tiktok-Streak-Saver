@@ -59,11 +59,36 @@
                            LineBreakMode="WordWrap"/>
                 </VerticalStackLayout>
 
+                <!--
+                    Nothing is saved until this list has been seen. The scan is a good guess and not an
+                    authority: a group whose name is one word reads as a person, and a person whose
+                    display name is not their handle can read as a group. Ticking rows and correcting
+                    them here is what stops a wrong reading from being saved and failing silently on
+                    every run.
+                -->
+                <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="4">
+                    <Button Text="Select all"
+                            Style="{StaticResource TextButton}"
+                            Clicked="OnSelectAllClicked"/>
+                    <Button Grid.Column="1"
+                            Text="Select none"
+                            Style="{StaticResource TextButton}"
+                            Clicked="OnSelectNoneClicked"/>
+                </Grid>
+
+                <Label x:Name="ResultsBlockedLabel"
+                       Text=""
+                       IsVisible="False"
+                       FontFamily="InterRegular"
+                       FontSize="13"
+                       TextColor="{AppThemeBinding Light={StaticResource DeleteColor}, Dark={StaticResource DeleteColor}}"
+                       LineBreakMode="WordWrap"/>
+
                 <Border Style="{StaticResource SectionCard}">
                     <VerticalStackLayout x:Name="ResultsList" Spacing="6"/>
                 </Border>
 
-                <Label Text="Names are read from the chat list, so a group name may need checking after it is added — the app matches groups by their chat header. You can rename any entry with Edit."
+                <Label Text="Tick the ones to add. Use Edit on a row to change its name, its username, or whether it is a person or a group — the scan can read a group as a person, and a group is matched by the name in its chat header, so check those before adding."
                        Style="{StaticResource DataLabel}"
                        LineBreakMode="WordWrap"/>
 

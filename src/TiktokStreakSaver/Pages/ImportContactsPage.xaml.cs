@@ -53,7 +53,21 @@ public partial class ImportContactsPage : ContentPage
     /// </summary>
     private string _lastStatus = string.Empty;
 
-    private List<FriendConfig> _found = new();
+    /// <summary>
+    /// The scanned chats as the review list holds them: which to add, and what has been corrected.
+    /// <para>
+    /// The scan is a good guess and not an authority - a group whose name is one word reads as a person -
+    /// so nothing is saved until this has been seen. Keeping it here rather than in the rows means a
+    /// correction survives the row being redrawn, which is what makes the edit worth making.
+    /// </para>
+    /// </summary>
+    private ImportDraft _draft = new(null);
+
+    /// <summary>
+    /// One redraw per row, so correcting an entry updates its own row instead of rebuilding the list and
+    /// throwing away the place the user had scrolled to.
+    /// </summary>
+    private readonly List<Action> _rowRefreshers = new();
 
 #if ANDROID
     /// <summary>The platform WebView the JavaScript interface is currently attached to.</summary>
@@ -603,13 +617,15 @@ public partial class ImportContactsPage : ContentPage
             ? _accumulated
             : ContactScanReader.ToFriends(scan.Items);
 
-        _found = ContactScanReader.SelectNew(_settingsService.GetFriendsList(), scanned);
-        var alreadyKnown = scanned.Count - _found.Count;
+        // Only what is not on the list already. An entry the user has had for months is not something to
+        // confirm again, and reviewing it would bury the ones that are actually new.
+        var found = ContactScanReader.SelectNew(_settingsService.GetFriendsList(), scanned);
+        var alreadyKnown = scanned.Count - found.Count;
 
         ScanWebView.IsVisible = false;
         CancelScanButton.IsVisible = false;
 
-        if (_found.Count == 0)
+        if (found.Count == 0)
         {
             ScanStatusLabel.Text = scanned.Count == 0
                 ? "No conversations were read from your inbox."
@@ -625,59 +641,104 @@ public partial class ImportContactsPage : ContentPage
             return;
         }
 
-        var friends = _found.Count(f => !f.IsGroup);
-        var groups = _found.Count - friends;
+        _draft = new ImportDraft(found);
 
-        ResultsSummaryLabel.Text = $"{_found.Count} new to add";
-        ResultsDetailLabel.Text = $"Read {scanned.Count} conversations: {friends} people and {groups} groups. "
-                                + (alreadyKnown > 0 ? $"{alreadyKnown} were already on your list. " : string.Empty)
-                                + "They will be added to the end of your send order.";
+        ResultsDetailLabel.Text = $"Read {scanned.Count} conversations. "
+            + (alreadyKnown > 0 ? $"{alreadyKnown} were already on your list. " : string.Empty)
+            + "Whatever is ticked is added to the end of your send order.";
 
-        var rowsToRemove = ResultsList.Children.ToList();
-        foreach (var row in rowsToRemove) ResultsList.Children.Remove(row);
-        foreach (var entry in _found)
-            ResultsList.Children.Add(CreateResultRow(entry));
-
-        AddContactsButton.Text = $"Add {_found.Count}";
+        ShowRows();
 
         ResultsPanel.IsVisible = true;
         await Task.CompletedTask;
     }
 
-    private View CreateResultRow(FriendConfig entry)
+    /// <summary>Draws the review list from the draft, and refreshes what depends on the selection.</summary>
+    private void ShowRows()
+    {
+        _rowRefreshers.Clear();
+
+        var rowsToRemove = ResultsList.Children.ToList();
+        foreach (var row in rowsToRemove) ResultsList.Children.Remove(row);
+
+        foreach (var entry in _draft.Entries)
+            ResultsList.Children.Add(CreateResultRow(entry));
+
+        RefreshDraftSummary();
+    }
+
+    /// <summary>
+    /// Puts the selection on screen: how much is ticked, what is wrong with any of it, and whether there
+    /// is anything to add.
+    /// <para>
+    /// The Add button is disabled rather than hidden when a ticked entry is not ready, so the count and
+    /// the reason stay on screen together instead of the button silently doing nothing.
+    /// </para>
+    /// </summary>
+    private void RefreshDraftSummary()
+    {
+        ResultsSummaryLabel.Text = _draft.DescribeSelection();
+
+        var blocked = _draft.DescribeBlocked();
+        ResultsBlockedLabel.Text = blocked ?? string.Empty;
+        ResultsBlockedLabel.IsVisible = blocked is not null;
+
+        var toAdd = _draft.ToAdd().Count;
+        AddContactsButton.Text = toAdd == 1 ? "Add 1" : $"Add {toAdd}";
+        AddContactsButton.IsEnabled = toAdd > 0 && !_isAdding;
+    }
+
+    private View CreateResultRow(ImportDraftEntry entry)
     {
         var grid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitionCollection
             {
-                new ColumnDefinition { Width = new GridLength(26) },
-                new ColumnDefinition { Width = GridLength.Star }
+                new ColumnDefinition { Width = GridLength.Auto },
+                new ColumnDefinition { Width = new GridLength(22) },
+                new ColumnDefinition { Width = GridLength.Star },
+                new ColumnDefinition { Width = GridLength.Auto }
             },
-            ColumnSpacing = 6
+            ColumnSpacing = 4
         };
+
+        var check = new CheckBox { IsChecked = entry.Include, VerticalOptions = LayoutOptions.Center };
+        grid.Children.Add(check);
 
         var marker = new Label
         {
-            Text = entry.IsGroup ? "◆" : "•",
+            Text = entry.Entry.IsGroup ? "◆" : "•",
             FontSize = 13,
             HorizontalTextAlignment = TextAlignment.Center,
             VerticalOptions = LayoutOptions.Center
         };
         marker.SetAppThemeColor(Label.TextColorProperty,
             GetThemeColor("Primary", "#FE2C55"), GetThemeColor("Primary", "#FE2C55"));
+        Grid.SetColumn(marker, 1);
         grid.Children.Add(marker);
 
-        var displayName = string.IsNullOrEmpty(entry.DisplayName) ? entry.Username : entry.DisplayName;
+        var title = new Label { Text = entry.Title, FontSize = 14, FontFamily = "InterMedium" };
+        var subtitle = new Label { Text = entry.Subtitle, FontSize = 12 };
         var infoStack = new VerticalStackLayout { Spacing = 2, VerticalOptions = LayoutOptions.Center };
-        infoStack.Children.Add(new Label { Text = displayName, FontSize = 14, FontFamily = "InterMedium" });
-        infoStack.Children.Add(new Label
-        {
-            Text = entry.IsGroup ? "Group" : $"@{entry.Username}",
-            FontSize = 12,
-            TextColor = GetThemeColor("Gray400", "#8B8F96")
-        });
-        Grid.SetColumn(infoStack, 1);
+        infoStack.Children.Add(title);
+        infoStack.Children.Add(subtitle);
+        Grid.SetColumn(infoStack, 2);
         grid.Children.Add(infoStack);
+
+        var editButton = new Button
+        {
+            Text = "Edit",
+            BackgroundColor = Colors.Transparent,
+            FontSize = 12,
+            Padding = new Thickness(8),
+            HeightRequest = 44,
+            VerticalOptions = LayoutOptions.Center
+        };
+        editButton.SetAppThemeColor(Button.TextColorProperty,
+            GetThemeColor("Gray400", "#8B8F96"), GetThemeColor("Gray400", "#8B8F96"));
+        editButton.Clicked += async (s, e) => await EditEntryAsync(entry);
+        Grid.SetColumn(editButton, 3);
+        grid.Children.Add(editButton);
 
         var row = new Border
         {
@@ -688,21 +749,145 @@ public partial class ImportContactsPage : ContentPage
         row.SetAppThemeColor(Border.BackgroundColorProperty,
             GetThemeColor("Gray100", "#F3F4F6"), GetThemeColor("Gray900", "#111827"));
         row.Content = grid;
+
+        // Redraws this row from its entry. A correction is written onto the entry itself, so this is what
+        // carries it to the screen - and an entry that is not ready says so on its own row rather than in
+        // a message after Add was pressed.
+        void Refresh()
+        {
+            check.IsChecked = entry.Include;
+            marker.Text = entry.Entry.IsGroup ? "◆" : "•";
+            title.Text = entry.Title;
+            subtitle.Text = entry.Subtitle;
+            subtitle.TextColor = entry.IsReady
+                ? GetThemeColor("Gray400", "#8B8F96")
+                : GetThemeColor("DeleteColor", "#EE1D52");
+
+            // A row that will not be added is dimmed, so the selection reads at a glance down a long list.
+            row.Opacity = entry.Include ? 1.0 : 0.45;
+        }
+
+        check.CheckedChanged += (s, e) =>
+        {
+            entry.Include = e.Value;
+            Refresh();
+            RefreshDraftSummary();
+        };
+
+        _rowRefreshers.Add(Refresh);
+        Refresh();
+
         return row;
+    }
+
+    private void OnSelectAllClicked(object? sender, EventArgs e)
+    {
+        _draft.IncludeAll();
+        RefreshRows();
+    }
+
+    private void OnSelectNoneClicked(object? sender, EventArgs e)
+    {
+        _draft.IncludeNone();
+        RefreshRows();
+    }
+
+    /// <summary>Redraws every row from the draft, for a change that affects all of them at once.</summary>
+    private void RefreshRows()
+    {
+        foreach (var refresh in _rowRefreshers)
+            refresh();
+
+        RefreshDraftSummary();
+    }
+
+    /// <summary>
+    /// Corrects one entry: its name, its username, or whether it is a person or a group.
+    /// <para>
+    /// Offered as a list rather than three buttons on the row, because a row in a long list has room for
+    /// one control and the three corrections are rare enough that a step is worth the space.
+    /// </para>
+    /// <para>
+    /// Switching to a person asks for the username straight away when there is none: a person is matched
+    /// by it, and leaving the row merely unusable would make the user find the problem themselves.
+    /// </para>
+    /// </summary>
+    private async Task EditEntryAsync(ImportDraftEntry entry)
+    {
+        var config = entry.Entry;
+        var typeChange = config.IsGroup ? "Change to person" : "Change to group";
+
+        var choice = await DisplayActionSheet(entry.Title, "Cancel", null,
+            "Change name", "Change username", typeChange);
+
+        if (choice == "Change name")
+        {
+            var typed = await DisplayPromptAsync("Change name",
+                config.IsGroup
+                    ? "A group is found by this name, so it has to match the chat header in TikTok:"
+                    : "This is only a label; the username is what the app sends to:",
+                initialValue: config.DisplayName ?? string.Empty);
+
+            if (typed is null)
+                return;
+
+            if (!ContactEditRules.TrySetDisplayName(config, typed, out var nameError))
+            {
+                await DisplayAlert("Not saved", nameError ?? "That name could not be used.", "OK");
+                return;
+            }
+        }
+        else if (choice == "Change username")
+        {
+            var typed = await DisplayPromptAsync("Change username",
+                "The TikTok username, without the @:",
+                initialValue: config.Username ?? string.Empty);
+
+            if (typed is null)
+                return;
+
+            if (!ContactEditRules.TrySetUsername(config, typed, out var usernameError))
+            {
+                await DisplayAlert("Not saved", usernameError ?? "That username could not be used.", "OK");
+                return;
+            }
+        }
+        else if (choice == typeChange)
+        {
+            ContactEditRules.SetGroup(config, !config.IsGroup);
+
+            if (!config.IsGroup && string.IsNullOrWhiteSpace(config.Username))
+            {
+                var typed = await DisplayPromptAsync("Username",
+                    "This one is matched by username. Enter the TikTok username, without the @:",
+                    initialValue: string.Empty);
+
+                if (typed is not null && !ContactEditRules.TrySetUsername(config, typed, out var usernameError))
+                    await DisplayAlert("Not saved", usernameError ?? "That username could not be used.", "OK");
+            }
+        }
+        else
+        {
+            // Cancelled, or the sheet was dismissed.
+            return;
+        }
+
+        RefreshRows();
     }
 
     private async void OnAddContactsClicked(object? sender, EventArgs e)
     {
-        if (_isAdding || _found.Count == 0)
+        var toAdd = _draft.ToAdd();
+        if (_isAdding || toAdd.Count == 0)
             return;
 
         _isAdding = true;
-        AddContactsButton.IsEnabled = false;
+        RefreshDraftSummary();
 
         try
         {
             var all = _settingsService.GetFriendsList();
-            all.AddRange(_found);
+            all.AddRange(toAdd);
 
             if (!_settingsService.TrySaveFriendsList(all, out var error))
             {
@@ -710,8 +895,10 @@ public partial class ImportContactsPage : ContentPage
                 return;
             }
 
+            var skipped = _draft.IncludedCount - toAdd.Count;
             await DisplayAlert("Added",
-                $"{_found.Count} entries added. They are at the end of your send order, so move them with Reorder on the Friends page if you want them earlier.",
+                $"{toAdd.Count} {(toAdd.Count == 1 ? "entry" : "entries")} added. They are at the end of your send order, so move them with Reorder on the Friends page if you want them earlier."
+                + (skipped > 0 ? $" {skipped} ticked {(skipped == 1 ? "entry was" : "entries were")} left out because {(skipped == 1 ? "it needs" : "they need")} a username." : string.Empty),
                 "OK");
 
             await Navigation.PopAsync();
@@ -719,7 +906,7 @@ public partial class ImportContactsPage : ContentPage
         finally
         {
             _isAdding = false;
-            AddContactsButton.IsEnabled = true;
+            RefreshDraftSummary();
         }
     }
 
