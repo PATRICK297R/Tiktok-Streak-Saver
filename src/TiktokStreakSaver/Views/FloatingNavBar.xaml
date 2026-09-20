@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:svc="clr-namespace:TiktokStreakSaver.Services"
              x:Class="TiktokStreakSaver.Views.FloatingNavBar"
              HorizontalOptions="Center"
              VerticalOptions="End">
@@ -31,7 +32,7 @@
                           WidthRequest="24" HeightRequest="24"
                           HorizontalOptions="Center" VerticalOptions="Center"/>
                 </Border>
-                <Label x:Name="DashboardLabel" Text="Home"
+                <Label x:Name="DashboardLabel" Text="{svc:Tr Nav_Home}"
                        FontFamily="InterMedium" FontSize="10"
                        HorizontalOptions="Center"
                        TextColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray500}}"/>
@@ -55,7 +56,7 @@
                           WidthRequest="24" HeightRequest="24"
                           HorizontalOptions="Center" VerticalOptions="Center"/>
                 </Border>
-                <Label x:Name="HistoryLabel" Text="History"
+                <Label x:Name="HistoryLabel" Text="{svc:Tr Nav_History}"
                        FontFamily="InterMedium" FontSize="10"
                        HorizontalOptions="Center"
                        TextColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray500}}"/>
@@ -79,7 +80,7 @@
                           WidthRequest="24" HeightRequest="24"
                           HorizontalOptions="Center" VerticalOptions="Center"/>
                 </Border>
-                <Label x:Name="FriendsLabel" Text="Friends"
+                <Label x:Name="FriendsLabel" Text="{svc:Tr Nav_Friends}"
                        FontFamily="InterMedium" FontSize="10"
                        HorizontalOptions="Center"
                        TextColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray500}}"/>
@@ -103,7 +104,7 @@
                           WidthRequest="24" HeightRequest="24"
                           HorizontalOptions="Center" VerticalOptions="Center"/>
                 </Border>
-                <Label x:Name="ProfileLabel" Text="Profile"
+                <Label x:Name="ProfileLabel" Text="{svc:Tr Prof_Title}"
                        FontFamily="InterMedium" FontSize="10"
                        HorizontalOptions="Center"
                        TextColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray500}}"/>

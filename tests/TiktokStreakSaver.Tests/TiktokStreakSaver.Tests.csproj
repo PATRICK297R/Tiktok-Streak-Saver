@@ -35,6 +35,7 @@
 		<Compile Include="../../src/TiktokStreakSaver/Services/MessageResolver.cs" Link="Shared/Services/MessageResolver.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/RunHistoryStats.cs" Link="Shared/Services/RunHistoryStats.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/RunLogStore.cs" Link="Shared/Services/RunLogStore.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/PendingSendStore.cs" Link="Shared/Services/PendingSendStore.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/StreakRiskEvaluator.cs" Link="Shared/Services/StreakRiskEvaluator.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/SendVerification.cs" Link="Shared/Services/SendVerification.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/SendConfirmationSummary.cs" Link="Shared/Services/SendConfirmationSummary.cs" />
@@ -48,6 +49,7 @@
 		<Compile Include="../../src/TiktokStreakSaver/Services/AppTimestamps.cs" Link="Shared/Services/AppTimestamps.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/AppJsonContext.cs" Link="Shared/Services/AppJsonContext.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/AppBackupCodec.cs" Link="Shared/Services/AppBackupCodec.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/AppStrings.cs" Link="Shared/Services/AppStrings.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/BackupMergePolicy.cs" Link="Shared/Services/BackupMergePolicy.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/BackupTimes.cs" Link="Shared/Services/BackupTimes.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/ContactScanReader.cs" Link="Shared/Services/ContactScanReader.cs" />

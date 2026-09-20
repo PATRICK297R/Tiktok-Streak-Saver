@@ -31,6 +31,16 @@ public static class AppConstants
     public const string RunLogsFileName = "run_logs.txt";
 
     /// <summary>
+    /// Durable record of the sends attempted today, written before each message goes out.
+    /// <para>
+    /// Separate from the run log because it is read by the service at the start of a run to decide who to
+    /// leave alone, and because it must be written and flushed to disk <em>before</em> a message is sent -
+    /// which is the only way a run killed mid-send can be prevented from sending the same message again.
+    /// </para>
+    /// </summary>
+    public const string PendingSendsFileName = "pending_sends.txt";
+
+    /// <summary>
     /// The chat import's progress and results. Kept on disk so an import started in the service can be
     /// collected by the page later, including after the app was closed and reopened.
     /// </summary>
@@ -38,6 +48,12 @@ public static class AppConstants
 
     /// <summary>Stops a chat import that is running. Sent to the import service by the page and by the notification.</summary>
     public const string ActionStopContactScan = PackageName + ".ACTION_STOP_CONTACT_SCAN";
+
+    /// <summary>
+    /// Which language the interface is drawn in. Absent means English, which is the default and what every
+    /// existing install keeps.
+    /// </summary>
+    public const string LanguageKey = "app_language";
 
     /// <summary>
     /// Carried by a chat-import notification: tapping it should land on the import page rather than on

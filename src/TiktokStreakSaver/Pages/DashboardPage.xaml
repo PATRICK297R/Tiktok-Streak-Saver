@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:svc="clr-namespace:TiktokStreakSaver.Services"
              xmlns:views="clr-namespace:TiktokStreakSaver.Views"
              x:Class="TiktokStreakSaver.Pages.DashboardPage"
-             Title="Dashboard"
+             Title="{svc:Tr Title_Dashboard}"
              Shell.NavBarIsVisible="False"
              Shell.TabBarIsVisible="False"
              NavigationPage.HasNavigationBar="False"
@@ -19,10 +20,10 @@
                 <Grid ColumnDefinitions="*, Auto" Margin="0,8,0,0">
                     <VerticalStackLayout Grid.Column="0" Spacing="2">
                         <Label x:Name="GreetingLabel"
-                               Text="Hi, User"
+                               Text="{svc:Tr Dash_GreetingDefault}"
                                Style="{StaticResource PageTitleLabel}"
                                HorizontalOptions="Start"/>
-                        <Label Text="TikTok Streak Automation"
+                        <Label Text="{svc:Tr Dash_Subtitle}"
                                FontFamily="InterRegular"
                                FontSize="13"
                                TextColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray400}}"
@@ -55,7 +56,7 @@
                     <Border Style="{StaticResource SectionCard}">
                         <VerticalStackLayout Spacing="14">
                             <Grid ColumnDefinitions="*, Auto">
-                                <Label Text="Daily Automation Progress" Style="{StaticResource SectionLabel}"/>
+                                <Label Text="{svc:Tr Dash_DailyProgress}" Style="{StaticResource SectionLabel}"/>
                                 <Border Grid.Column="1"
                                         StrokeThickness="0"
                                         StrokeShape="RoundRectangle 8"
@@ -74,27 +75,27 @@
 
                             <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
                                 <VerticalStackLayout Spacing="4">
-                                    <Label Text="Sent Today" Style="{StaticResource DataLabel}"/>
+                                    <Label Text="{svc:Tr Fr_SentToday}" Style="{StaticResource DataLabel}"/>
                                     <Label x:Name="OverviewSentLabel" Text="0" Style="{StaticResource ValueLabel}"/>
                                 </VerticalStackLayout>
                                 <VerticalStackLayout Grid.Column="1" Spacing="4">
-                                    <Label Text="Success" Style="{StaticResource DataLabel}"/>
+                                    <Label Text="{svc:Tr Dash_Success}" Style="{StaticResource DataLabel}"/>
                                     <Label x:Name="OverviewSuccessLabel" Text="--" Style="{StaticResource ValueLabel}"/>
                                 </VerticalStackLayout>
                                 <VerticalStackLayout Grid.Column="2" Spacing="4">
-                                    <Label Text="Remaining" Style="{StaticResource DataLabel}"/>
+                                    <Label Text="{svc:Tr Dash_Remaining}" Style="{StaticResource DataLabel}"/>
                                     <Label x:Name="OverviewRemainingLabel" Text="--" Style="{StaticResource ValueLabel}"/>
                                 </VerticalStackLayout>
                             </Grid>
 
                             <Grid ColumnDefinitions="*, Auto">
                                 <VerticalStackLayout Spacing="4" VerticalOptions="Center">
-                                    <Label x:Name="NextRunTitleLabel" Text="Next Scheduled Run" Style="{StaticResource DataLabel}"/>
-                                    <Label x:Name="NextRunLabel" Text="Not scheduled" FontFamily="InterSemiBold" FontSize="16" TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"/>
+                                    <Label x:Name="NextRunTitleLabel" Text="{svc:Tr Dash_NextRun}" Style="{StaticResource DataLabel}"/>
+                                    <Label x:Name="NextRunLabel" Text="{svc:Tr Dash_NotScheduled}" FontFamily="InterSemiBold" FontSize="16" TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"/>
                                 </VerticalStackLayout>
                                 <VerticalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="Center" HorizontalOptions="End">
-                                    <Label Text="Last Run" Style="{StaticResource DataLabel}" HorizontalTextAlignment="End"/>
-                                    <Label x:Name="LastRunLabel" Text="Never" Style="{StaticResource ValueLabel}" HorizontalTextAlignment="End"/>
+                                    <Label Text="{svc:Tr Dash_LastRun}" Style="{StaticResource DataLabel}" HorizontalTextAlignment="End"/>
+                                    <Label x:Name="LastRunLabel" Text="{svc:Tr Dash_Never}" Style="{StaticResource ValueLabel}" HorizontalTextAlignment="End"/>
                                 </VerticalStackLayout>
                             </Grid>
                         </VerticalStackLayout>
@@ -103,22 +104,22 @@
                     <!-- Run Configuration Card -->
                     <Border Style="{StaticResource SectionCard}">
                         <VerticalStackLayout Spacing="12">
-                            <Label Text="Run Configuration" Style="{StaticResource SectionLabel}"/>
+                            <Label Text="{svc:Tr Dash_RunConfiguration}" Style="{StaticResource SectionLabel}"/>
                             <Label x:Name="RandomizeModeHint"
-                                   Text="Randomized messages enabled — 50 built-in variants"
+                                   Text="{svc:Tr Dash_RandomizeOn}"
                                    Style="{StaticResource DataLabel}"
                                    LineBreakMode="WordWrap"
                                    IsVisible="False"/>
                             <VerticalStackLayout x:Name="CustomMessagePanel" Spacing="4">
                                 <Label x:Name="MessageEditorHint"
-                                       Text="Message sent to each friend during a streak run. Use {name} for their display name and {username} for their handle."
+                                       Text="{svc:Tr Dash_MessageHint}"
                                        Style="{StaticResource DataLabel}"
                                        LineBreakMode="WordWrap"/>
                                 <Border x:Name="MessageEditorBorder" StrokeThickness="0"
                                         StrokeShape="RoundRectangle 16"
                                         BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}">
                                     <Editor x:Name="MessageEditor"
-                                            Placeholder="Enter your streak message..."
+                                            Placeholder="{svc:Tr Dash_MessagePlaceholder}"
                                             HeightRequest="72"
                                             Margin="12,8"
                                             BackgroundColor="Transparent"
@@ -132,7 +133,7 @@
                 </VerticalStackLayout>
 
                 <Label x:Name="PullToRefreshHintLabel"
-                       Text="Pull down to check for updates"
+                       Text="{svc:Tr Dash_PullToRefresh}"
                        FontFamily="InterRegular"
                        FontSize="12"
                        TextColor="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray600}}"
@@ -159,23 +160,23 @@
 
             <VerticalStackLayout Spacing="12">
                 <VerticalStackLayout x:Name="PermissionsPanel" IsVisible="False" Spacing="8">
-                    <Label Text="To automate streaks reliably in the background, your device requires the following:"
+                    <Label Text="{svc:Tr Dash_PermissionsIntro}"
                            Style="{StaticResource DataLabel}"
                            LineBreakMode="WordWrap"/>
                     <Button x:Name="BtnExactAlarm"
-                            Text="Allow Exact Scheduling"
+                            Text="{svc:Tr Dash_AllowExactAlarm}"
                             BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray800}}"
                             TextColor="{AppThemeBinding Light={StaticResource Gray900}, Dark={StaticResource White}}"
                             CornerRadius="12" HeightRequest="44"
                             Clicked="OnRequestExactAlarmClicked"/>
                     <Button x:Name="BtnBatteryOpt"
-                            Text="Disable Battery Restrictions"
+                            Text="{svc:Tr Dash_DisableBatteryOpt}"
                             BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray800}}"
                             TextColor="{AppThemeBinding Light={StaticResource Gray900}, Dark={StaticResource White}}"
                             CornerRadius="12" HeightRequest="44"
                             Clicked="OnRequestBatteryOptimizationClicked"/>
                     <Button x:Name="BtnNotification"
-                            Text="Allow Status Notifications"
+                            Text="{svc:Tr Dash_AllowNotifications}"
                             BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray800}}"
                             TextColor="{AppThemeBinding Light={StaticResource Gray900}, Dark={StaticResource White}}"
                             CornerRadius="12" HeightRequest="44"
@@ -184,7 +185,7 @@
 
                 <Grid x:Name="RunButtonsContainer">
                     <Button x:Name="MasterRunButton"
-                            Text="Run Now"
+                            Text="{svc:Tr Dash_RunNow}"
                             BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                             TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
                             FontFamily="InterSemiBold"
@@ -195,7 +196,7 @@
                 </Grid>
 
                 <Button x:Name="StopServiceButton"
-                        Text="Stop Processing"
+                        Text="{svc:Tr Dash_StopProcessing}"
                         IsVisible="False"
                         BackgroundColor="{AppThemeBinding Light={StaticResource DeleteColor}, Dark={StaticResource DeleteColor}}"
                         TextColor="White"

@@ -22,20 +22,20 @@ public static class RunRecency
     public static string DescribeLastRun(DateTime? lastRun, DateTime now)
     {
         if (!lastRun.HasValue)
-            return "Never";
+            return AppStrings.T("Dash_Never");
 
         var elapsed = now - lastRun.Value;
 
         // A clock that moved backwards, or a timestamp written moments into the future, must not
         // produce "-3 minutes ago".
         if (elapsed < TimeSpan.FromMinutes(1))
-            return "Just now";
+            return AppStrings.T("Rec_JustNow");
 
         if (elapsed.TotalMinutes < 60)
-            return Ago((int)elapsed.TotalMinutes, "minute");
+            return Ago((int)elapsed.TotalMinutes, "Rec_MinuteAgo", "Rec_MinutesAgo");
 
         if (elapsed.TotalHours < 24)
-            return Ago((int)elapsed.TotalHours, "hour");
+            return Ago((int)elapsed.TotalHours, "Rec_HourAgo", "Rec_HoursAgo");
 
         return lastRun.Value.ToString("MMM dd, HH:mm");
     }
@@ -54,12 +54,12 @@ public static class RunRecency
             return null;
 
         if (value.TotalSeconds < 1)
-            return "< 1s";
+            return AppStrings.T("Rec_DurationUnderSecond");
 
         if (value.TotalMinutes >= 1)
-            return $"{(int)value.TotalMinutes}m {value.Seconds}s";
+            return string.Format(AppStrings.T("Rec_DurationMinutesSeconds"), (int)value.TotalMinutes, value.Seconds);
 
-        return $"{(int)value.TotalSeconds}s";
+        return string.Format(AppStrings.T("Rec_DurationSeconds"), (int)value.TotalSeconds);
     }
 
     /// <summary>
@@ -68,12 +68,12 @@ public static class RunRecency
     /// </summary>
     public static string DescribeLastRunWithDuration(DateTime? lastRun, TimeSpan? duration, DateTime now)
     {
-        var sentence = $"Last run: {DescribeLastRun(lastRun, now)}";
+        var sentence = string.Format(AppStrings.T("Hist_LastRun"), DescribeLastRun(lastRun, now));
         var durationText = DescribeDuration(duration);
 
         return durationText is null ? sentence : $"{sentence} · {durationText}";
     }
 
-    private static string Ago(int amount, string unit) =>
-        amount == 1 ? $"1 {unit} ago" : $"{amount} {unit}s ago";
+    private static string Ago(int amount, string singularKey, string pluralKey) =>
+        string.Format(AppStrings.T(amount == 1 ? singularKey : pluralKey), amount);
 }

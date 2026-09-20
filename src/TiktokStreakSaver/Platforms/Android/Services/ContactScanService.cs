@@ -33,11 +33,11 @@ public class ContactScanService : Service
 {
     /// <summary>Quiet, ongoing progress. Low importance so it never makes a sound.</summary>
     private const string ProgressChannelId = "contact_scan_channel";
-    private const string ProgressChannelName = "Chat import";
+    private static string ProgressChannelName => Localization.T("Android_ScanChannelName");
 
     /// <summary>The result, which is worth a sound because the user is usually not looking at the app.</summary>
     private const string ResultChannelId = "contact_scan_result_channel";
-    private const string ResultChannelName = "Chat import results";
+    private static string ResultChannelName => Localization.T("Android_ScanResultChannelName");
 
     /// <summary>
     /// Kept well clear of the streak service's 1001/1002: those two are its ongoing notification and its
@@ -157,7 +157,7 @@ public class ContactScanService : Service
             }
 
             LogDiagnostic("stop requested by the user");
-            Finish(ContactScanPhase.Cancelled, "Stopped.");
+            Finish(ContactScanPhase.Cancelled, Localization.T("Android_ScanStopped"));
             return StartCommandResult.NotSticky;
         }
 
@@ -283,7 +283,7 @@ public class ContactScanService : Service
         {
             var progress = new NotificationChannel(ProgressChannelId, ProgressChannelName, NotificationImportance.Low)
             {
-                Description = "Shows how many of your chats have been read"
+                Description = Localization.T("Android_ScanChannelDesc")
             };
             progress.SetShowBadge(false);
             manager.CreateNotificationChannel(progress);
@@ -294,7 +294,7 @@ public class ContactScanService : Service
             manager.CreateNotificationChannel(new NotificationChannel(
                 ResultChannelId, ResultChannelName, NotificationImportance.Default)
             {
-                Description = "Tells you when your chats have been read and are ready to review"
+                Description = Localization.T("Android_ScanResultChannelDesc")
             });
         }
     }
@@ -303,7 +303,7 @@ public class ContactScanService : Service
     {
         try
         {
-            var notification = BuildProgressNotification("Opening your inbox…", withStopAction: false);
+            var notification = BuildProgressNotification(Localization.T("Imp_Opening"), withStopAction: false);
 
             if (Build.VERSION.SdkInt >= BuildVersionCodes.Q)
                 StartForeground(NotificationId, notification, global::Android.Content.PM.ForegroundService.TypeDataSync);
@@ -346,7 +346,7 @@ public class ContactScanService : Service
     private Notification BuildProgressNotification(string text, bool withStopAction)
     {
         var builder = new NotificationCompat.Builder(this, ProgressChannelId)
-            .SetContentTitle("Reading your TikTok chats")
+            .SetContentTitle(Localization.T("Android_ReadingChatsTitle"))
             .SetContentText(text)
             .SetStyle(new NotificationCompat.BigTextStyle().BigText(text))
             .SetSmallIcon(Resource.Drawable.ic_notification)
@@ -358,7 +358,7 @@ public class ContactScanService : Service
             .SetProgress(0, 0, true);
 
         if (withStopAction)
-            builder.AddAction(0, "Stop", StopIntent());
+            builder.AddAction(0, Localization.T("Common_Stop"), StopIntent());
 
         return builder.Build()!;
     }
@@ -375,7 +375,7 @@ public class ContactScanService : Service
             var text = ContactScanSnapshot.SummaryText(snapshot);
 
             var notification = new NotificationCompat.Builder(this, ResultChannelId)
-                .SetContentTitle("TikTok Streak Saver")
+                .SetContentTitle(Localization.T("Android_NotificationTitle"))
                 .SetContentText(text)
                 .SetStyle(new NotificationCompat.BigTextStyle().BigText(text))
                 .SetSmallIcon(Resource.Drawable.ic_notification)
@@ -434,13 +434,13 @@ public class ContactScanService : Service
             var session = new SessionService();
             if (!session.IsSessionValid())
             {
-                Finish(ContactScanPhase.Failed, "TikTok asked you to sign in again.");
+                Finish(ContactScanPhase.Failed, Localization.T("Android_SignInAgain"));
                 return;
             }
 
             if (!NetworkConnectivity.HasWifiOrCellularInternet(this))
             {
-                Finish(ContactScanPhase.Failed, "There is no internet connection.");
+                Finish(ContactScanPhase.Failed, Localization.T("Android_NoInternet"));
                 return;
             }
 
@@ -460,7 +460,7 @@ public class ContactScanService : Service
         }
         catch (Exception ex)
         {
-            Finish(ContactScanPhase.Failed, $"The reader could not start: {ex.Message}");
+            Finish(ContactScanPhase.Failed, string.Format(Localization.T("Android_ReaderCouldNotStart"), ex.Message));
         }
     }
 
@@ -505,7 +505,7 @@ public class ContactScanService : Service
                 _mainHandler?.PostDelayed(() =>
                 {
                     if (!_finished && !(_webView?.Url ?? string.Empty).Contains("tiktok.com/messages"))
-                        Finish(ContactScanPhase.Failed, "Could not open tiktok.com/messages.");
+                        Finish(ContactScanPhase.Failed, Localization.T("Android_CouldNotOpenMessages"));
                 }, 5000);
             }
         }, 5000);
@@ -587,14 +587,14 @@ public class ContactScanService : Service
             {
                 // Resending did not bring it back. What was read is still worth offering, and the message
                 // travels with it so the page can say the list is partial.
-                Finish(ContactScanPhase.Finished, "The reader stopped responding before the end of the list.");
+                Finish(ContactScanPhase.Finished, Localization.T("Android_ReaderStalled"));
                 return;
             }
 
             _lastReportAt = DateTime.Now;
             _lastInjectionAt = DateTime.MinValue;
             Inject();
-            UpdateProgressNotification($"Reading your chats… restarting the reader (attempt {_injectionAttempts})", force: true);
+            UpdateProgressNotification(string.Format(Localization.T("Android_RestartingReader"), _injectionAttempts), force: true);
             return;
         }
 
@@ -606,8 +606,8 @@ public class ContactScanService : Service
             // because the inbox has not loaded, it would read "attempt 0" and look broken.
             UpdateProgressNotification(
                 _injectionAttempts == 0
-                    ? "Opening your inbox…"
-                    : $"Opening your inbox… (attempt {_injectionAttempts})",
+                    ? Localization.T("Imp_Opening")
+                    : string.Format(Localization.T("Android_OpeningInboxAttempt"), _injectionAttempts),
                 force: true);
             return;
         }
@@ -617,8 +617,8 @@ public class ContactScanService : Service
             // Which of the two failures this was matters, because they are fixed in different places: a page
             // that never loaded is the connection, a script that never ran is the app.
             Finish(ContactScanPhase.Failed, _lastSkippedUrl is not null
-                ? "TikTok's inbox never loaded — the page stayed blank. Check your connection, then try again."
-                : "The reader did not start on the page.");
+                ? Localization.T("Android_InboxNeverLoaded")
+                : Localization.T("Android_ReaderDidNotStart"));
         }
     }
 
@@ -766,7 +766,7 @@ public class ContactScanService : Service
         _lastSkippedUrl = null;
         _lastReportAt = DateTime.Now;
 
-        UpdateProgressNotification("Opening your inbox…", force: true);
+        UpdateProgressNotification(Localization.T("Imp_Opening"), force: true);
         LoadUrl(MessagesUrl);
     }
 
@@ -928,7 +928,7 @@ public class ContactScanService : Service
             if (WebViewNavigationPolicy.IsLoginWall(url))
             {
                 LogDiagnostic($"login wall at {url}");
-                _service.Finish(ContactScanPhase.Failed, "TikTok asked you to sign in again.");
+                _service.Finish(ContactScanPhase.Failed, Localization.T("Android_SignInAgain"));
                 return;
             }
 

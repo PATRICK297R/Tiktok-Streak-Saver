@@ -18,10 +18,10 @@ namespace TiktokStreakSaver.Platforms.Android.Services;
 public class StreakService : Service
 {
     private const string ChannelId = "streak_service_channel";
-    private const string ChannelName = "Streak Service";
+    private static string ChannelName => Localization.T("Android_StreakChannelName");
     /// <summary>Ongoing foreground + completion / offline alerts that should be visible (not Low importance).</summary>
     private const string StatusChannelId = "streak_status_channel";
-    private const string StatusChannelName = "Streak status";
+    private static string StatusChannelName => Localization.T("Android_StatusChannelName");
     private const int NotificationId = 1001;
 
     private WebView? _webView;
@@ -99,6 +99,28 @@ public class StreakService : Service
             }
 
             return _logStore;
+        }
+    }
+
+    private static PendingSendStore? _pendingSendStore;
+
+    /// <summary>
+    /// Durable record of the sends attempted today, written before each message goes out and flushed to
+    /// disk. This is what stops a run that the system killed from messaging the same friend twice: the
+    /// in-memory and Preferences records of a send both depend on the send having finished and the
+    /// process having survived it.
+    /// </summary>
+    private static PendingSendStore PendingSends
+    {
+        get
+        {
+            if (_pendingSendStore == null)
+            {
+                var path = System.IO.Path.Combine(FileSystem.AppDataDirectory, AppConstants.PendingSendsFileName);
+                _pendingSendStore = new PendingSendStore(path);
+            }
+
+            return _pendingSendStore;
         }
     }
 
@@ -191,7 +213,7 @@ public class StreakService : Service
         {
             _isCancelRequested = true;
             AppLog("SYSTEM", "-", "Service stop requested by user");
-            CompleteService(false, "Run stopped by user.");
+            CompleteService(false, Localization.T("Android_RunStoppedByUser"));
             return StartCommandResult.NotSticky;
         }
 
@@ -222,7 +244,7 @@ public class StreakService : Service
     {
         try
         {
-            var notification = CreateNotification("Preparing to send streaks...");
+            var notification = CreateNotification(Localization.T("Android_PreparingToSend"));
 
             if (Build.VERSION.SdkInt >= BuildVersionCodes.Q)
             {
@@ -284,7 +306,7 @@ public class StreakService : Service
 
             var channel = new NotificationChannel(ChannelId, ChannelName, NotificationImportance.Low)
             {
-                Description = "Notification channel for streak service"
+                Description = Localization.T("Android_StreakChannelDesc")
             };
             channel.SetShowBadge(false);
 
@@ -303,7 +325,7 @@ public class StreakService : Service
 
             var channel = new NotificationChannel(StatusChannelId, StatusChannelName, NotificationImportance.Default)
             {
-                Description = "Run results and connection issues"
+                Description = Localization.T("Android_StatusChannelDesc")
             };
             notificationManager.CreateNotificationChannel(channel);
         }
@@ -316,7 +338,7 @@ public class StreakService : Service
         var pendingIntent = PendingIntent.GetActivity(this, 0, intent, PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent);
 
         var builder = new NotificationCompat.Builder(this, ChannelId)
-            .SetContentTitle("TikTok Streak Saver")
+            .SetContentTitle(Localization.T("Android_NotificationTitle"))
             .SetContentText(message)
             .SetStyle(new NotificationCompat.BigTextStyle().BigText(message))
             .SetSmallIcon(Resource.Drawable.ic_notification)
@@ -337,7 +359,7 @@ public class StreakService : Service
         var pendingIntent = PendingIntent.GetActivity(this, 0, intent, PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent);
 
         var builder = new NotificationCompat.Builder(this, ChannelId)
-            .SetContentTitle("TikTok Streak Saver")
+            .SetContentTitle(Localization.T("Android_NotificationTitle"))
             .SetContentText(message)
             .SetStyle(new NotificationCompat.BigTextStyle().BigText(message))
             .SetSmallIcon(Resource.Drawable.ic_notification)
@@ -384,6 +406,11 @@ public class StreakService : Service
             var allEnabled = _settingsService?.GetEnabledFriends() ?? new List<FriendConfig>();
             var today = DateTime.Now.Date;
 
+            // What the durable record says about today. Read before anything is sent, because a run that
+            // the system killed mid-send leaves an entry here with no result - and that entry is the only
+            // evidence that a message may already have gone out.
+            var durableStates = PendingSends.ReadToday(today);
+
             foreach (var friend in allEnabled)
             {
                 if (friend.LastMessageSent.HasValue && friend.LastMessageSent.Value.Date == today)
@@ -391,12 +418,28 @@ public class StreakService : Service
                     _cooldownSkippedCount++;
                     AppLog("SKIP", $"@{friend.Username}",
                         $"Already messaged today at {friend.LastMessageSent.Value:HH:mm}");
+                    continue;
                 }
-                else
+
+                // Sent: the message is known to have gone out. Unknown: the send was in flight when the
+                // process was killed, so it may have gone out. Either way, sending again would put a second
+                // message on the same friend - the pile-up this record exists to prevent - so the entry is
+                // left alone for the rest of the day. A definite failure is not skipped: nothing was sent,
+                // so a retry is safe.
+                if (durableStates.TryGetValue(friend.Id, out var outcome) && outcome != PendingSendState.Failed)
                 {
-                    _friendsToProcess.Add(friend);
+                    _cooldownSkippedCount++;
+                    AppLog("SKIP", $"@{friend.Username}", outcome == PendingSendState.Sent
+                        ? "Already messaged today (durable record)"
+                        : "May already have been messaged — the previous run was interrupted");
+                    continue;
                 }
+
+                _friendsToProcess.Add(friend);
             }
+
+            // Yesterday's records cannot affect today, so they are dropped rather than kept forever.
+            PendingSends.PruneBefore(today);
 
             // Initialize randomized message pool if user opted in.
             if (_settingsService?.GetRandomizeNormalMessages() == true)
@@ -417,8 +460,8 @@ public class StreakService : Service
             if (_friendsToProcess.Count == 0)
             {
                 var msg = _cooldownSkippedCount > 0
-                    ? $"All {_cooldownSkippedCount} friends already messaged today"
-                    : "No friends configured";
+                    ? string.Format(Localization.T("Android_AllFriendsMessaged"), _cooldownSkippedCount)
+                    : Localization.T("Android_NoFriendsConfigured");
                 CompleteService(_cooldownSkippedCount > 0, msg);
                 return;
             }
@@ -429,7 +472,7 @@ public class StreakService : Service
                 return;
             }
 
-            UpdateNotification("Preparing automation...");
+            UpdateNotification(Localization.T("Android_PreparingAutomation"));
 
             using var resourceStream = await FileSystem.OpenAppPackageFileAsync("tiktok_automation.js");
             using var reader = new StreamReader(resourceStream);
@@ -479,7 +522,7 @@ public class StreakService : Service
                     {
                         if (!(_webView?.Url ?? "").Contains("tiktok.com/messages"))
                         {
-                            CompleteService(false, "Could not navigate to tiktok.com/messages");
+                            CompleteService(false, Localization.T("Android_CouldNotNavigate"));
                         }
                     }, 5000);
                 }
@@ -487,7 +530,7 @@ public class StreakService : Service
         }
         catch (Exception ex)
         {
-            CompleteService(false, $"Error starting WebView: {ex.Message}");
+            CompleteService(false, string.Format(Localization.T("Android_ErrorStartingWebView"), ex.Message));
         }
     }
 
@@ -511,7 +554,7 @@ public class StreakService : Service
             if (_automationStarted) return;
             _automationStarted = true;
 
-            UpdateNotification("Connecting to TikTok...");
+            UpdateNotification(Localization.T("Android_ConnectingToTikTok"));
             AppLog("NAVIGATION", "-", "Messages page ready");
             // Wait a bit for the page to fully render, then start automation
             _mainHandler?.PostDelayed(ProcessNextFriend, 3000);
@@ -520,7 +563,7 @@ public class StreakService : Service
         {
             AppLog("NAVIGATION", "-", "TikTok login required");
             // User needs to login
-            CompleteService(false, "TikTok login required. Please login via the app first.");
+            CompleteService(false, Localization.T("Android_LoginRequired"));
         }
     }
 
@@ -532,7 +575,8 @@ public class StreakService : Service
         bool skipUnreachable = _settingsService?.GetSkipUnreachableUsers() ?? false;
         if (!skipUnreachable && _runResult is not null && _runResult.Failed)
         {
-            CompleteService(false, $"Run stopped: {_runResult.ErrorMessage ?? _runResult.FriendsErrorMessage}");
+            CompleteService(false, string.Format(Localization.T("Android_RunStoppedReason"),
+                _runResult.ErrorMessage ?? _runResult.FriendsErrorMessage));
             return;
         }
 
@@ -541,8 +585,10 @@ public class StreakService : Service
             // All friends processed — mark success only if every friend succeeded
             var allSucceeded = _runResult?.FriendResults.All(r => r.Success) ?? false;
             var completionMessage = allSucceeded
-                ? "All messages sent successfully"
-                : $"{_runResult?.FriendResults.Count(r => r.Success) ?? 0} of {_runResult?.FriendResults.Count ?? 0} sent";
+                ? Localization.T("Android_AllMessagesSent")
+                : string.Format(Localization.T("Android_SentOf"),
+                    _runResult?.FriendResults.Count(r => r.Success) ?? 0,
+                    _runResult?.FriendResults.Count ?? 0);
             CompleteService(allSucceeded, completionMessage);
             return;
         }
@@ -586,7 +632,8 @@ public class StreakService : Service
         message = MessageTemplate.Render(message, friend.Username, friend.DisplayName);
 
         var displayLabel = friend.IsGroup ? friend.DisplayName : $"@{friend.Username}";
-        UpdateNotification($"{_currentFriendIndex + 1}/{_friendsToProcess.Count} \u2014 Processing: {displayLabel}",
+        UpdateNotification(string.Format(Localization.T("Android_Processing"),
+            _currentFriendIndex + 1, _friendsToProcess.Count, displayLabel),
             _currentFriendIndex, _friendsToProcess.Count);
 
         // For groups TikTok has no @handle, so we match the chat header by display name instead.
@@ -601,6 +648,14 @@ public class StreakService : Service
 
         _allowSendRetries = true;
         var js = GetFriendMessageScript(target, message, friend.IsGroup);
+
+        // Written and flushed to disk before the message goes out, not after it is confirmed. If the
+        // system kills the service while this send is in flight, the next run has to be able to tell that
+        // a message may already have reached this friend - the result of this send is exactly what a kill
+        // takes away. A rehearsal sends nothing, so it records nothing.
+        if (!_dryRun)
+            PendingSends.MarkAttempted(friend.Id, friend.Username, DateTime.Now);
+
         _webView?.EvaluateJavascript(js, null);
     }
 
@@ -688,6 +743,9 @@ public class StreakService : Service
             }
             _settingsService.UpdateFriend(friend);
 
+            // A definite failure means nothing was sent, so this entry must not block a later retry today.
+            PendingSends.MarkFailed(friend.Id, DateTime.Now);
+
             _runResult?.FriendResults.Add(new FriendMessageResult
             {
                 FriendId = friend.Id,
@@ -698,7 +756,8 @@ public class StreakService : Service
 
             _failureAttemptsForCurrentFriend = 0;
             _currentFriendIndex++;
-            UpdateNotification($"{_currentFriendIndex}/{_friendsToProcess.Count} : Failed: {label}", _currentFriendIndex, _friendsToProcess.Count);
+            UpdateNotification(string.Format(Localization.T("Android_ProgressFailed"),
+                _currentFriendIndex, _friendsToProcess.Count, label), _currentFriendIndex, _friendsToProcess.Count);
             _mainHandler?.PostDelayed(ProcessNextFriend, 3000);
             return;
         }
@@ -734,6 +793,7 @@ public class StreakService : Service
         AppLog("SUCCESS", label, $"Message sent ({SendVerification.Describe(verification)})");
 
         _settingsService.UpdateFriend(friend);
+        PendingSends.MarkSent(friend.Id, DateTime.Now);
 
         _runResult?.FriendResults.Add(new FriendMessageResult
         {
@@ -757,7 +817,7 @@ public class StreakService : Service
         _failureAttemptsForCurrentFriend = 0;
         var completedCount = _currentFriendIndex;
         var totalCount = _friendsToProcess?.Count ?? 0;
-        var resultText = $"{completedCount}/{totalCount} : Sent to {sentLabel}";
+        var resultText = string.Format(Localization.T("Android_SentTo"), completedCount, totalCount, sentLabel);
         UpdateNotification(resultText, completedCount, totalCount);
 
         if (_currentFriendIndex < totalCount)
@@ -783,7 +843,7 @@ public class StreakService : Service
             if (_runResult != null && _settingsService != null)
             {
                 _runResult.Success = false;
-                _runResult.ErrorMessage = "Skipped: no Wi‑Fi or mobile data";
+                _runResult.ErrorMessage = Localization.T("Android_SkippedNoNetwork");
                 // A skipped run is still a run, so it gets a duration too. The retry below schedules
                 // itself deliberately rather than leaning on the interval clock.
                 _runResult.Duration = TakeRunDuration();
@@ -797,15 +857,15 @@ public class StreakService : Service
             string body;
             if (attempt > 0)
             {
-                title = "TikTok Streak Saver — offline";
-                body = $"No Wi‑Fi or mobile data. Streak run skipped; retrying in 1 hour (attempt {attempt}/{max}).";
-                UpdateNotification($"No Wi‑Fi or mobile data — retry in 1 hour ({attempt}/{max})");
+                title = Localization.T("Android_OfflineTitle");
+                body = string.Format(Localization.T("Android_OfflineRetryBody"), attempt, max);
+                UpdateNotification(string.Format(Localization.T("Android_OfflineRetryNote"), attempt, max));
             }
             else
             {
-                title = "TikTok Streak Saver — gave up for today";
-                body = $"No Wi‑Fi or mobile data after {max} retries. Will try again on the next scheduled run.";
-                UpdateNotification($"No Wi‑Fi or mobile data — {max} retries exhausted");
+                title = Localization.T("Android_OfflineGaveUpTitle");
+                body = string.Format(Localization.T("Android_OfflineGaveUpBody"), max);
+                UpdateNotification(string.Format(Localization.T("Android_OfflineExhausted"), max));
             }
 
             var finalNotification = new NotificationCompat.Builder(this, StatusChannelId)
@@ -868,33 +928,33 @@ public class StreakService : Service
 
             // Build human-readable summary including cooldown-skipped friends
             var cooldownNote = _cooldownSkippedCount > 0
-                ? $", {_cooldownSkippedCount} already sent"
+                ? string.Format(Localization.T("Android_CooldownNote"), _cooldownSkippedCount)
                 : string.Empty;
 
             string finalText;
             if (success)
             {
-                finalText = $"Done : {successCount}/{totalSent} sent successfully{cooldownNote}";
+                finalText = string.Format(Localization.T("Android_DoneAllSent"), successCount, totalSent, cooldownNote);
             }
             else if (totalSent > 0 && successCount > 0)
             {
                 if (_disabledUsernames.Count > 0)
-                    finalText = $"Done : {successCount}/{totalSent} sent, {_disabledUsernames.Count} disabled ({string.Join(", ", _disabledUsernames)}){cooldownNote}";
+                    finalText = string.Format(Localization.T("Android_DoneSentDisabled"), successCount, totalSent, _disabledUsernames.Count, string.Join(", ", _disabledUsernames), cooldownNote);
                 else
-                    finalText = $"Done : {successCount}/{totalSent} sent, {skippedCount} skipped{cooldownNote}";
+                    finalText = string.Format(Localization.T("Android_DoneSentSkipped"), successCount, totalSent, skippedCount, cooldownNote);
             }
             else
             {
                 if (_disabledUsernames.Count > 0)
-                    finalText = $"Done : 0/{totalSent} sent, {_disabledUsernames.Count} disabled ({string.Join(", ", _disabledUsernames)}){cooldownNote}";
+                    finalText = string.Format(Localization.T("Android_DoneSentDisabled"), 0, totalSent, _disabledUsernames.Count, string.Join(", ", _disabledUsernames), cooldownNote);
                 else if (totalSent > 0)
-                    finalText = $"Done : 0/{totalSent} sent, {skippedCount} failed{cooldownNote}";
+                    finalText = string.Format(Localization.T("Android_DoneSentFailed"), 0, totalSent, skippedCount, cooldownNote);
                 else
-                    finalText = $"Stopped : {message}";
+                    finalText = string.Format(Localization.T("Android_StoppedFinal"), message);
             }
 
             var finalNotification = new NotificationCompat.Builder(this, StatusChannelId)
-                .SetContentTitle("TikTok Streak Saver")
+                .SetContentTitle(Localization.T("Android_NotificationTitle"))
                 .SetContentText(finalText)
                 .SetStyle(new NotificationCompat.BigTextStyle().BigText(finalText))
                 .SetSmallIcon(Resource.Drawable.ic_notification)

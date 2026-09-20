@@ -12,6 +12,11 @@
 
 		<!-- Display name -->
 		<ApplicationTitle>Streak Saver</ApplicationTitle>
+		<!-- Original creator first, then the continuation. Kept as one field because the assembly
+		     metadata takes a single author list. -->
+		<Authors>Jon2G;Rasya</Authors>
+		<Company>Streak Saver contributors</Company>
+		<Product>Streak Saver</Product>
 
 		<!-- App Identifier -->
 		<ApplicationId>com.jon2g.tiktokstreaksaver</ApplicationId>
@@ -23,7 +28,7 @@
 			(.github/workflows/android-release.yml and ios-release.yml) override BOTH values
 			from the pushed git tag, so a tag release never depends on what is written here:
 
-			  tag v2.1.30    -> ApplicationDisplayVersion 2.1.30, ApplicationVersion 20130
+			  tag v2.1.38    -> ApplicationDisplayVersion 2.1.38, ApplicationVersion 20138
 			  tag ios-v0.1.5 -> ApplicationDisplayVersion 0.1.5, ApplicationVersion 105
 
 			Both workflows derive the build number from the tag as
@@ -34,8 +39,8 @@
 			reads this value, and ProfilePage/DashboardPage use it for the in-app update check,
 			so a stale default makes local builds report a version no release matches.
 		-->
-		<ApplicationDisplayVersion>2.1.30</ApplicationDisplayVersion>
-		<ApplicationVersion>20130</ApplicationVersion>
+		<ApplicationDisplayVersion>2.1.38</ApplicationDisplayVersion>
+		<ApplicationVersion>20138</ApplicationVersion>
 
 		<!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
 		<WindowsPackageType>None</WindowsPackageType>

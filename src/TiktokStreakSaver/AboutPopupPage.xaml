@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:svc="clr-namespace:TiktokStreakSaver.Services"
              x:Class="TiktokStreakSaver.AboutPopupPage"
              BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}">
 
@@ -9,7 +10,7 @@
         <!-- Header -->
         <VerticalStackLayout Grid.Row="0" Spacing="4" HorizontalOptions="Center" Margin="0, 16, 0, 0">
             <Label x:Name="HeaderTitle"
-                   Text="Welcome to Streak Saver"
+                   Text="{svc:Tr About_Welcome}"
                    Style="{StaticResource PageTitleLabel}"
                    HorizontalOptions="Center"
                    HorizontalTextAlignment="Center"/>
@@ -19,7 +20,7 @@
                    HorizontalOptions="Center"
                    HorizontalTextAlignment="Center"/>
             <Label x:Name="SubHeaderLabel" 
-                   Text="Keep your streaks alive, automatically." 
+                   Text="{svc:Tr About_Tagline}" 
                    Style="{StaticResource DataLabel}" 
                    HorizontalOptions="Center"
                    HorizontalTextAlignment="Center"/>
@@ -42,27 +43,38 @@
 
                 <!-- App Information -->
                 <VerticalStackLayout Spacing="8">
-                    <Label Text="About this app" Style="{StaticResource SectionLabel}"/>
-                    <Label Text="Streak Saver is designed to automate and protect your TikTok streaks. It runs natively in the background on a schedule you configure, finding and messaging your friends so you are less likely to miss a day." 
+                    <Label Text="{svc:Tr About_ThisApp}" Style="{StaticResource SectionLabel}"/>
+                    <Label Text="{svc:Tr About_Description}" 
                            Style="{StaticResource ValueLabel}" 
                            LineBreakMode="WordWrap"/>
                 </VerticalStackLayout>
 
                 <!-- Project & author -->
                 <VerticalStackLayout Spacing="4">
-                    <Label Text="Open source" Style="{StaticResource SectionLabel}" Margin="0, 0, 0, 4"/>
-                    <Label Text="Streak Saver by Jon2G" Style="{StaticResource ValueLabel}"/>
+                    <Label Text="{svc:Tr About_OpenSource}" Style="{StaticResource SectionLabel}" Margin="0, 0, 0, 4"/>
+                    <Label Text="{svc:Tr About_ByOriginalAuthor}" Style="{StaticResource ValueLabel}"/>
                     <Label Text="https://github.com/Jon2G/TiktokStreakSaver"
                            TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"
                            FontSize="12" />
                 </VerticalStackLayout>
 
+                <!--
+                    Continuation credit. The original creator and the upstream author keep their credit
+                    above and below; this line only records who carries the project on.
+                -->
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="{svc:Tr About_ContinuedBy}" Style="{StaticResource ValueLabel}"/>
+                    <Label Text="{svc:Tr About_ContinuedBody}"
+                           Style="{StaticResource DataLabel}"
+                           LineBreakMode="WordWrap"/>
+                </VerticalStackLayout>
+
                 <VerticalStackLayout Spacing="6">
-                    <Label Text="Credits" Style="{StaticResource SectionLabel}" Margin="0, 8, 0, 4"/>
+                    <Label Text="{svc:Tr About_Credits}" Style="{StaticResource SectionLabel}" Margin="0, 8, 0, 4"/>
                     <Label Style="{StaticResource ValueLabel}" LineBreakMode="WordWrap">
                         <Label.FormattedText>
                             <FormattedString>
-                                <Span Text="The current UI and most of the stability work in this version are a direct port of the rewrite that " />
+                                <Span Text="{svc:Tr About_PortCredit}" />
                                 <Span Text="eulfn"
                                       TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                                       TextDecorations="Underline">
@@ -70,7 +82,7 @@
                                         <TapGestureRecognizer Tapped="OnFeenerCreditTapped" />
                                     </Span.GestureRecognizers>
                                 </Span>
-                                <Span Text=" did in his fork " />
+                                <Span Text="{svc:Tr About_PortCreditTail}" />
                                 <Span Text="streak-tiktok"
                                       TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                                       TextDecorations="Underline">
@@ -78,24 +90,24 @@
                                         <TapGestureRecognizer Tapped="OnFeenerCreditTapped" />
                                     </Span.GestureRecognizers>
                                 </Span>
-                                <Span Text=" (project name &quot;Feener&quot;). Massive thanks to him and contributors." />
+                                <Span Text="{svc:Tr About_FeenerTail}" />
                             </FormattedString>
                         </Label.FormattedText>
                     </Label>
-                    <Label Text="Specifically credited:"
+                    <Label Text="{svc:Tr About_CreditedSpecifically}"
                            Style="{StaticResource DataLabel}"
                            Margin="0, 6, 0, 0"/>
                     <Label Style="{StaticResource DataLabel}" LineBreakMode="WordWrap">
                         <Label.FormattedText>
                             <FormattedString>
-                                <Span Text="• Multi-page architecture (Dashboard / Friends / History / Profile)&#10;" />
-                                <Span Text="• Custom FloatingNavBar and progress drawables&#10;" />
-                                <Span Text="• Theme tokens, Inter font family, Android 12+ splash screen&#10;" />
-                                <Span Text="• WebView viewport fix (renders TikTok's virtualized chat list)&#10;" />
-                                <Span Text="• Session-stored user agent + cookie-based login helper&#10;" />
-                                <Span Text="• Randomized streak messages and per-friend bounded retry&#10;" />
-                                <Span Text="• Improved tiktok_automation.js (virtualized scroll, checkpoint retry)&#10;" />
-                                <Span Text="• OnDestroy mutex reset and other run-stability fixes" />
+                                <Span Text="{svc:Tr About_Feature1}&#10;" />
+                                <Span Text="{svc:Tr About_Feature2}&#10;" />
+                                <Span Text="{svc:Tr About_Feature3}&#10;" />
+                                <Span Text="{svc:Tr About_Feature4}&#10;" />
+                                <Span Text="{svc:Tr About_Feature5}&#10;" />
+                                <Span Text="{svc:Tr About_Feature6}&#10;" />
+                                <Span Text="{svc:Tr About_Feature7}&#10;" />
+                                <Span Text="{svc:Tr About_Feature8}" />
                             </FormattedString>
                         </Label.FormattedText>
                     </Label>
@@ -103,11 +115,11 @@
 
                 <!-- Data & Permissions Notice -->
                 <VerticalStackLayout Spacing="8" Margin="0, 0, 0, 12">
-                    <Label Text="Privacy &amp; System Permissions" 
+                    <Label Text="{svc:Tr About_Privacy}" 
                            Style="{StaticResource SectionLabel}" 
                            TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray400}}" 
                            FontSize="12"/>
-                    <Label Text="All operations execute locally on your device. Zero credentials or messaging session keys are extracted or broadcasted remotely. Background automations require battery exemptions and exact-alarm scheduling to function reliably." 
+                    <Label Text="{svc:Tr About_LocalOnly}" 
                            Style="{StaticResource DataLabel}" 
                            LineBreakMode="WordWrap" 
                            FontSize="12"/>
@@ -132,7 +144,7 @@
                   IsVisible="False">
                 <Button x:Name="LaterButton"
                         Grid.Column="0"
-                        Text="Later"
+                        Text="{svc:Tr About_Later}"
                         BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray800}}"
                         TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray200}}"
                         CornerRadius="12"
@@ -140,7 +152,7 @@
                         Clicked="OnLaterClicked"/>
                 <Button x:Name="InstallButton"
                         Grid.Column="2"
-                        Text="Install"
+                        Text="{svc:Tr About_Install}"
                         BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                         TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
                         FontFamily="InterSemiBold"
@@ -151,7 +163,7 @@
 
             <!-- Continue button: shown only for onboarding (non-update) popups -->
             <Button x:Name="CloseButton"
-                    Text="Continue"
+                    Text="{svc:Tr About_Continue}"
                     BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                     TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
                     FontFamily="InterSemiBold"

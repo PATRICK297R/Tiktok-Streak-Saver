@@ -73,7 +73,7 @@ public partial class IosShortcutTutorialPage : ContentPage
         DoneButton.IsVisible = isLast;
 
         if (!isLast)
-            NextButton.Text = $"Next ({index + 1}/{_steps.Count})";
+            NextButton.Text = string.Format(Localization.T("Ios_NextProgress"), index + 1, _steps.Count);
     }
 
     private void StyleTab(int index, bool selected)
@@ -119,7 +119,7 @@ public partial class IosShortcutTutorialPage : ContentPage
         }
         catch
         {
-            await DisplayAlert("Shortcuts", "Open the Shortcuts app manually from your home screen.", "OK");
+            await DisplayAlert(Localization.T("Ios_ShortcutsTitle"), Localization.T("Ios_OpenShortcutsManually"), Localization.T("Common_OK"));
         }
     }
 

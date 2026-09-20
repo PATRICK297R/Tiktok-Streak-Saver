@@ -1,5 +1,7 @@
 namespace TiktokStreakSaver.Pages;
 
+using TiktokStreakSaver.Services;
+
 [Microsoft.Maui.Controls.Internals.Preserve(AllMembers = true)]
 public partial class PrivacyPage : ContentPage
 {
@@ -35,7 +37,8 @@ public partial class PrivacyPage : ContentPage
         }
         catch (Exception ex)
         {
-            await DisplayAlert("Open Link", $"Could not open the link: {ex.Message}", "OK");
+            await DisplayAlert(Localization.T("Pv_OpenLinkTitle"),
+                string.Format(Localization.T("Pv_OpenLinkError"), ex.Message), Localization.T("Common_OK"));
         }
     }
 
@@ -47,7 +50,8 @@ public partial class PrivacyPage : ContentPage
         }
         catch (Exception ex)
         {
-            await DisplayAlert("Open Link", $"Could not open the link: {ex.Message}", "OK");
+            await DisplayAlert(Localization.T("Pv_OpenLinkTitle"),
+                string.Format(Localization.T("Pv_OpenLinkError"), ex.Message), Localization.T("Common_OK"));
         }
     }
 }

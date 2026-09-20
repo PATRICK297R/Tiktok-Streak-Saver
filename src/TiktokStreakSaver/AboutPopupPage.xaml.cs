@@ -479,7 +479,7 @@ blockquote{{
         _isDownloading = true;
         InstallButton.IsEnabled = false;
         LaterButton.IsEnabled = false;
-        InstallButton.Text = "Downloading...";
+        InstallButton.Text = Localization.T("About_DownloadingShort");
 
         _downloadCts = new CancellationTokenSource();
 
@@ -489,7 +489,7 @@ blockquote{{
             {
                 int pct = (int)Math.Round(percent * 100);
                 ProgressLabel.IsVisible = true;
-                ProgressLabel.Text = $"Downloading update... {pct}%";
+                ProgressLabel.Text = string.Format(Localization.T("About_DownloadingUpdate"), pct);
             });
         });
 
@@ -513,7 +513,7 @@ blockquote{{
         Preferences.Default.Set("LastRemoteVersionSeen", _assignedVersion);
         Preferences.Default.Set("LastAppVersionSeen", _assignedVersion);
 
-        ProgressLabel.Text = "Starting installer...";
+        ProgressLabel.Text = Localization.T("About_StartingInstaller");
 
         TriggerApkInstall(apkPath);
 
@@ -526,9 +526,9 @@ blockquote{{
         _isDownloading = false;
         InstallButton.IsEnabled = true;
         LaterButton.IsEnabled = true;
-        InstallButton.Text = "Install";
+        InstallButton.Text = Localization.T("About_Install");
         ProgressLabel.IsVisible = true;
-        ProgressLabel.Text = "Download failed. Please try again.";
+        ProgressLabel.Text = Localization.T("About_DownloadFailed");
         ProgressLabel.TextColor = Color.FromArgb("#D94A4A");
 
         SwitchToFallbackMode();
@@ -539,7 +539,7 @@ blockquote{{
         if (_isFallbackMode) return;
         _isFallbackMode = true;
 
-        InstallButton.Text = "Open GitHub Page";
+        InstallButton.Text = Localization.T("About_OpenGithubPage");
         InstallButton.Clicked -= OnInstallClicked;
         InstallButton.Clicked += OnFallbackClicked;
     }
@@ -598,8 +598,7 @@ blockquote{{
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 ProgressLabel.IsVisible = true;
-                ProgressLabel.Text = "Install failed. If you see a 'conflicting package' error, " +
-                                     "uninstall this app first, then reinstall from GitHub.";
+                ProgressLabel.Text = Localization.T("About_InstallFailed");
                 ProgressLabel.TextColor = Color.FromArgb("#D94A4A");
                 _isDownloading = false;
                 InstallButton.IsEnabled = true;

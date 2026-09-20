@@ -158,7 +158,7 @@ public class SettingsService
         }
 #endif
 
-        error = "Could not read saved friends list.";
+        error = AppStrings.T("Common_CouldNotReadFriends");
         return false;
     }
 
@@ -177,14 +177,14 @@ public class SettingsService
 
         if (!TryDeserializeFriends(json, out _))
         {
-            error = "Could not serialize friends list.";
+            error = AppStrings.T("Common_CouldNotSerializeFriends");
             return false;
         }
 
 #if IOS
         if (!Platforms.iOS.Services.IosFriendsFileStorage.WriteJson(json))
         {
-            error = "Could not write friends file.";
+            error = AppStrings.T("Common_CouldNotWriteFriendsFile");
             return false;
         }
 #endif
@@ -194,7 +194,7 @@ public class SettingsService
         var readBack = ReadFriendsListJson();
         if (string.IsNullOrWhiteSpace(readBack) || !TryDeserializeFriends(readBack, out var parsed) || parsed == null)
         {
-            error = "Friends list did not persist on this device.";
+            error = AppStrings.T("Common_FriendsNotPersisted");
             return false;
         }
 

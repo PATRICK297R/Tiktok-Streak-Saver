@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:svc="clr-namespace:TiktokStreakSaver.Services"
              x:Class="TiktokStreakSaver.Pages.IosLimitationsPage"
-             Title="Why iOS is different"
+             Title="{svc:Tr Prof_WhyIosDifferent}"
              Shell.NavBarIsVisible="True"
              BackgroundColor="{AppThemeBinding Light={StaticResource PageBackgroundLight}, Dark={StaticResource OffBlack}}">
 
@@ -15,73 +16,73 @@
                     Stroke="{AppThemeBinding Light=#FCD34D, Dark=#92400E}"
                     BackgroundColor="{AppThemeBinding Light=#FFFBEB, Dark=#451A03}">
                 <VerticalStackLayout Spacing="8">
-                    <Label Text="Experimental — not production-ready"
+                    <Label Text="{svc:Tr Ios_Experimental}"
                            FontFamily="InterSemiBold"
                            FontSize="15"
                            TextColor="{AppThemeBinding Light=#92400E, Dark=#FCD34D}" />
                     <Label LineBreakMode="WordWrap"
                            FontSize="13"
                            TextColor="{AppThemeBinding Light=#78350F, Dark=#FDE68A}"
-                           Text="Streak Saver on iPhone cannot match Android reliability. Do not rely on iOS for daily streak protection. Use Android for automatic messaging while your phone is locked or the app is closed." />
+                           Text="{svc:Tr Ios_CannotMatch}" />
                 </VerticalStackLayout>
             </Border>
 
-            <Label Text="What works on iOS (best effort)"
+            <Label Text="{svc:Tr Ios_WhatWorks}"
                    Style="{StaticResource SectionLabel}" />
             <Label Style="{StaticResource ValueLabel}" LineBreakMode="WordWrap"
-                   Text="• Run Now when you open the app&#10;• Shortcuts automation when your iPhone is unlocked at the scheduled time&#10;• Widget tap after you unlock&#10;• Notifications when a run finishes or login is needed" />
+                   Text="{svc:Tr Ios_WorksList}" />
 
-            <Label Text="What does not work"
+            <Label Text="{svc:Tr Ios_WhatDoesNotWork}"
                    Style="{StaticResource SectionLabel}" />
             <Label Style="{StaticResource ValueLabel}" LineBreakMode="WordWrap"
-                   Text="• Automation while the phone is locked — Shortcuts shows: Unable to launch because the device couldn't be unlocked&#10;• Silent background runs like Android — iOS suspends WebView JavaScript when backgrounded&#10;• In-app timers — scheduling is only through the Shortcuts app&#10;• Set-and-forget sideloading — AltStore certificates expire about every 7 days" />
+                   Text="{svc:Tr Ios_LimitsList}" />
 
-            <Label Text="Tips if you still test on iPhone"
+            <Label Text="{svc:Tr Ios_Tips}"
                    Style="{StaticResource SectionLabel}" />
             <Label Style="{StaticResource ValueLabel}" LineBreakMode="WordWrap"
-                   Text="Schedule your automation for a time you are usually awake and unlocked. Use Run Now as a fallback. After app updates, delete and recreate the Shortcut." />
+                   Text="{svc:Tr Ios_TipBody}" />
 
-            <Label Text="Official Apple documentation"
+            <Label Text="{svc:Tr Ios_AppleDocs}"
                    Style="{StaticResource SectionLabel}" />
             <Label Style="{StaticResource DataLabel}" LineBreakMode="WordWrap"
-                   Text="These limits follow Apple's platform rules, not missing features we can patch in the app." />
+                   Text="{svc:Tr Ios_AppleRules}" />
 
-            <Button Text="App Intents — openAppWhenRun"
+            <Button Text="{svc:Tr Ios_AppIntentsOpenApp}"
                     Clicked="OnOpenAppWhenRunDoc"
                     BackgroundColor="{AppThemeBinding Light={StaticResource PrimarySubtle}, Dark={StaticResource Gray800}}"
                     TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                     FontFamily="InterSemiBold"
                     CornerRadius="14"
                     HeightRequest="44" />
-            <Button Text="App Intents — foreground / background modes"
+            <Button Text="{svc:Tr Ios_AppIntentsModes}"
                     Clicked="OnSupportedModesDoc"
                     BackgroundColor="{AppThemeBinding Light={StaticResource PrimarySubtle}, Dark={StaticResource Gray800}}"
                     TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                     FontFamily="InterSemiBold"
                     CornerRadius="14"
                     HeightRequest="44" />
-            <Button Text="Background tasks (limits)"
+            <Button Text="{svc:Tr Ios_BackgroundTasks}"
                     Clicked="OnBackgroundTasksDoc"
                     BackgroundColor="{AppThemeBinding Light={StaticResource PrimarySubtle}, Dark={StaticResource Gray800}}"
                     TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                     FontFamily="InterSemiBold"
                     CornerRadius="14"
                     HeightRequest="44" />
-            <Button Text="WKWebView (WebKit)"
+            <Button Text="{svc:Tr Ios_WkWebView}"
                     Clicked="OnWkWebViewDoc"
                     BackgroundColor="{AppThemeBinding Light={StaticResource PrimarySubtle}, Dark={StaticResource Gray800}}"
                     TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                     FontFamily="InterSemiBold"
                     CornerRadius="14"
                     HeightRequest="44" />
-            <Button Text="Shortcuts user guide"
+            <Button Text="{svc:Tr Ios_ShortcutsGuide}"
                     Clicked="OnShortcutsGuideDoc"
                     BackgroundColor="{AppThemeBinding Light={StaticResource PrimarySubtle}, Dark={StaticResource Gray800}}"
                     TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                     FontFamily="InterSemiBold"
                     CornerRadius="14"
                     HeightRequest="44" />
-            <Button Text="Full explanation on GitHub"
+            <Button Text="{svc:Tr Ios_FullOnGithub}"
                     Clicked="OnFullDoc"
                     BackgroundColor="Transparent"
                     TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"

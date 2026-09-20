@@ -1,3 +1,4 @@
+using TiktokStreakSaver.Services;
 using TiktokStreakSaver.Services.Storage;
 
 namespace TiktokStreakSaver.Pages;
@@ -17,45 +18,34 @@ public partial class IosOnboardingPage : ContentPage
     {
         _step = step;
         SecondaryButton.IsVisible = step > 0 && step < 4;
-        SecondaryButton.Text = step == 1 ? "Read full details" : "Skip for now";
+        SecondaryButton.Text = step == 1 ? Localization.T("Ios_ReadFullDetails") : Localization.T("Ios_SkipForNow");
 
         switch (step)
         {
             case 0:
-                StepTitleLabel.Text = "Welcome to Streak Saver (iOS)";
-                StepBodyLabel.Text =
-                    "This iOS build is experimental and not equivalent to Android. " +
-                    "Streaks run through Shortcuts or the widget — not silent background alarms. " +
-                    "The app must open briefly while TikTok runs in an invisible browser, and your iPhone must be unlocked when the automation fires.";
-                PrimaryButton.Text = "Continue";
+                StepTitleLabel.Text = Localization.T("Ios_WelcomeTitle");
+                StepBodyLabel.Text = Localization.T("Ios_WelcomeBody");
+                PrimaryButton.Text = Localization.T("About_Continue");
                 break;
             case 1:
-                StepTitleLabel.Text = "Know the limits";
-                StepBodyLabel.Text =
-                    "Shortcuts cannot launch Streak Saver while your phone is locked — you may see Unable to launch because the device couldn't be unlocked. " +
-                    "iOS also suspends WebView automation in the background. For reliable daily streaks, use the Android app. " +
-                    "Tap Read full details for Apple's official documentation links.";
-                PrimaryButton.Text = "I understand — continue";
+                StepTitleLabel.Text = Localization.T("Ios_LimitsTitle");
+                StepBodyLabel.Text = Localization.T("Ios_LimitsBody");
+                PrimaryButton.Text = Localization.T("Ios_UnderstandContinue");
                 break;
             case 2:
-                StepTitleLabel.Text = "Set up Shortcuts";
-                StepBodyLabel.Text =
-                    "Use the step-by-step guide with tabs for each screen on your phone. " +
-                    "Schedule the automation for a time you are usually awake and unlocked.";
-                PrimaryButton.Text = "Open setup guide";
+                StepTitleLabel.Text = Localization.T("Ios_SetUpShortcuts");
+                StepBodyLabel.Text = Localization.T("Ios_SetUpShortcutsBody");
+                PrimaryButton.Text = Localization.T("Ios_OpenSetupGuide");
                 break;
             case 3:
-                StepTitleLabel.Text = "AltStore & certificate";
-                StepBodyLabel.Text =
-                    "This app is installed via AltStore. Free certificates expire every 7 days. Keep AltStore refreshing in the background " +
-                    "so the app and Shortcuts keep working.";
-                PrimaryButton.Text = "I understand";
+                StepTitleLabel.Text = Localization.T("Ios_AltStoreTitle");
+                StepBodyLabel.Text = Localization.T("Ios_AltStoreBody");
+                PrimaryButton.Text = Localization.T("Ios_Understand");
                 break;
             case 4:
-                StepTitleLabel.Text = "Notifications";
-                StepBodyLabel.Text =
-                    "Allow notifications so you know when a streak run finishes or when you need to log in again.";
-                PrimaryButton.Text = "Enable notifications";
+                StepTitleLabel.Text = Localization.T("Ios_NotificationsTitle");
+                StepBodyLabel.Text = Localization.T("Ios_NotificationsBody");
+                PrimaryButton.Text = Localization.T("Ios_EnableNotifications");
                 break;
             default:
                 CompleteOnboarding();

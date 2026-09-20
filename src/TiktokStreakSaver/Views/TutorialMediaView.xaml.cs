@@ -35,18 +35,18 @@ public partial class TutorialMediaView : ContentView
 
         if (string.IsNullOrWhiteSpace(fileName))
         {
-            PlaceholderTitleLabel.Text = "No media for this step";
+            PlaceholderTitleLabel.Text = Localization.T("Tut_NoMedia");
             PlaceholderHintLabel.Text = string.Empty;
             return;
         }
 
         var assetPath = IosShortcutTutorialCatalog.MediaAssetPath(fileName);
         PlaceholderHintLabel.Text =
-            $"Place your file at:\nResources/Raw/{assetPath}";
+            string.Format(Localization.T("Tut_PlaceFileAt"), assetPath);
 
         if (!await AssetExistsAsync(assetPath))
         {
-            PlaceholderTitleLabel.Text = "Media not bundled yet";
+            PlaceholderTitleLabel.Text = Localization.T("Tut_MediaNotBundled");
             return;
         }
 
@@ -63,8 +63,8 @@ public partial class TutorialMediaView : ContentView
             return;
         }
 
-        PlaceholderTitleLabel.Text = "Unsupported media type";
-        PlaceholderHintLabel.Text = $"Use .gif, .png, .jpg, or .mp4 for {fileName}";
+        PlaceholderTitleLabel.Text = Localization.T("Tut_UnsupportedType");
+        PlaceholderHintLabel.Text = string.Format(Localization.T("Tut_UseSupportedFormats"), fileName);
     }
 
     private void ShowImage(string assetPath)
@@ -101,7 +101,7 @@ public partial class TutorialMediaView : ContentView
         }
         catch
         {
-            PlaceholderTitleLabel.Text = "Could not load video";
+            PlaceholderTitleLabel.Text = Localization.T("Tut_CouldNotLoadVideo");
         }
     }
 

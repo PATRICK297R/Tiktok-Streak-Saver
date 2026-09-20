@@ -226,6 +226,21 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 - Built with [.NET MAUI](https://dotnet.microsoft.com/apps/maui)
 - Inspired by the need to never lose a streak again
 
+### Original creator: [Jon2G](https://github.com/Jon2G)
+
+Streak Saver was created by **Jon2G**, who designed and built the app and its Android automation. All of that work remains credited here and in the in-app About screen.
+
+### Continued by Rasya
+
+This project is **continued and maintained by Rasya**, who took it on after the original author's last release. The continuation adds several features and fixes a number of bugs, including:
+
+- **A language switch** (English / Indonesian), with English as the default
+- **A durable record of attempted sends**, so a run the system kills mid-flight no longer messages the same friend twice
+- **Reorder mode that shows and edits the real combined send order**, including between friends and groups
+- **Per-friend and per-group custom messages**, with `{name}` and `{username}` placeholders
+- **Chat import that shows each chat as it is read**, plus a review list before anything is saved
+- **Fixes** to the post-login crash, the welcome popup that could not be dismissed, the daily progress that never updated, the "Last run: N/A" label, and the Add-time button in the schedule settings
+
 ### Special thanks to [eulfn](https://github.com/eulfn) (Feener / [streak-tiktok](https://github.com/eulfn/streak-tiktok))
 
 The current architecture of this app is a direct port of the rewrite that **eulfn** did in his fork [`streak-tiktok`](https://github.com/eulfn/streak-tiktok) (project name "Feener"). Massive credit to him and contributors for designing and implementing essentially the entire current UX and most of the stability fixes that ship in this version, including:

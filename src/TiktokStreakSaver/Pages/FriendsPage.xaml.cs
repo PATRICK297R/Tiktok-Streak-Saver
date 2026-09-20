@@ -13,9 +13,6 @@ public partial class FriendsPage : ContentPage
     private IDispatcherTimer? _statusTimer;
     private bool _isGroupMode = false;
 
-    /// <summary>Whether the "Send order" card is showing its list. Kept across refreshes.</summary>
-    private bool _sendOrderExpanded = false;
-
     /// <summary>
     /// The id of the row being dragged right now, or null.
     /// <para>
@@ -106,8 +103,8 @@ public partial class FriendsPage : ContentPage
 
             SearchAndBulkRow.IsEnabled = !isRunning;
             SearchAndBulkRow.Opacity = isRunning ? 0.6 : 1.0;
-            ActionButtonsGrid.IsEnabled = !isRunning;
-            ActionButtonsGrid.Opacity = isRunning ? 0.6 : 1.0;
+            ActionButtonsRow.IsEnabled = !isRunning;
+            ActionButtonsRow.Opacity = isRunning ? 0.6 : 1.0;
 
             GroupBulkRow.IsEnabled = !isRunning;
             GroupBulkRow.Opacity = isRunning ? 0.6 : 1.0;
@@ -116,10 +113,6 @@ public partial class FriendsPage : ContentPage
 
             if (AddFriendPanel.IsVisible && isRunning) AddFriendPanel.IsVisible = false;
             if (AddGroupPanel.IsVisible && isRunning) AddGroupPanel.IsVisible = false;
-
-            // Reordering mid-run could not affect the run already in flight, so it is not offered.
-            SendOrderToggleButton.IsEnabled = !isRunning;
-            SendOrderToggleButton.Opacity = isRunning ? 0.6 : 1.0;
 
             // Applied on top of the busy state above, because an arrangement in progress closes the same
             // controls for its own reason.
@@ -150,6 +143,11 @@ public partial class FriendsPage : ContentPage
         // Searching is off while arranging: dropping a card on a row that is only on screen because of a
         // search would move it past entries the user cannot see.
         SearchAndBulkRow.IsVisible = !reordering && friendsAll.Count > 0;
+
+        // Importing is off while arranging for the same reason the toolbar and search are: it would add
+        // entries to the list underneath a draft that was built from the list as it was, and the new ones
+        // would not be part of the arrangement the user is about to save.
+        ImportChatsCard.IsVisible = !reordering;
         var friendSearch = reordering ? string.Empty : (SearchFriendEntry.Text?.Trim() ?? string.Empty);
         var friendsToShow = string.IsNullOrEmpty(friendSearch)
             ? friendsAll
@@ -163,12 +161,12 @@ public partial class FriendsPage : ContentPage
 
         if (friendsAll.Count == 0)
         {
-            NoFriendsLabel.Text = "No friends added. Tap 'Add' to begin.";
+            NoFriendsLabel.Text = Localization.T("Fr_NoFriendsAdd");
             NoFriendsLabel.IsVisible = true;
         }
         else if (friendsToShow.Count == 0 && !string.IsNullOrEmpty(friendSearch))
         {
-            NoFriendsLabel.Text = $"No friends found matching '{friendSearch}'";
+            NoFriendsLabel.Text = string.Format(Localization.T("Fr_NoFriendMatch"), friendSearch);
             NoFriendsLabel.IsVisible = true;
         }
         else
@@ -191,12 +189,12 @@ public partial class FriendsPage : ContentPage
 
         if (groupsAll.Count == 0)
         {
-            NoGroupsLabel.Text = "No groups added. Tap 'Add' to begin.";
+            NoGroupsLabel.Text = Localization.T("Fr_NoGroupsAdd");
             NoGroupsLabel.IsVisible = true;
         }
         else if (groupsToShow.Count == 0 && !string.IsNullOrEmpty(groupSearch))
         {
-            NoGroupsLabel.Text = $"No groups found matching '{groupSearch}'";
+            NoGroupsLabel.Text = string.Format(Localization.T("Fr_NoGroupMatch"), groupSearch);
             NoGroupsLabel.IsVisible = true;
         }
         else
@@ -206,250 +204,34 @@ public partial class FriendsPage : ContentPage
         foreach (var group in groupsToShow) GroupsListContainer.Children.Add(CreateEntryView(group));
 
         UpdateStatsCard(allItems);
-        RefreshSendOrder(allItems);
+
+        // While arranging, the list drawn is the sequence itself rather than the two filtered sections.
+        if (reordering)
+            RenderReorderList(allItems);
+
         RefreshReorderControls();
     }
 
-    // ─── Send order ──────────────────────────────────────────────────────────
-
     /// <summary>
-    /// Shows the exact order entries will be messaged in.
-    /// <para>
-    /// The Friends and Groups sections below split one saved list into two, so neither can show this:
-    /// a group saved before a friend is messaged first while being displayed underneath. This list is
-    /// the queue itself, so what the user sees is what the runner will do.
-    /// </para>
+    /// Draws the one list the order is actually arranged in: both kinds together, in the order they will
+    /// be messaged.
     /// </summary>
-    private void RefreshSendOrder(List<FriendConfig>? all = null)
+    /// <remarks>
+    /// The normal view splits the saved sequence into a Friends section and a Groups section, so it cannot
+    /// show where a group sits relative to a friend. This shows the sequence, which is what the runner
+    /// walks and what the drag operates on.
+    /// </remarks>
+    private void RenderReorderList(List<FriendConfig> allItems)
     {
-        var queue = FriendOrder.SendQueue(all ?? _settingsService.GetFriendsList());
+        var rowsToRemove = ReorderListContainer.Children.ToList();
+        foreach (var row in rowsToRemove) ReorderListContainer.Children.Remove(row);
 
-        // Hidden while an order is being arranged: the card is drawn from storage, and storage still holds
-        // the order being replaced, so showing it then would contradict the list.
-        SendOrderCard.IsVisible = _reorderDraft is null && queue.Count >= 2;
-        SendOrderSubtitleLabel.Text = $"{queue.Count} entries, messaged top to bottom";
+        foreach (var entry in allItems)
+            ReorderListContainer.Children.Add(CreateReorderRow(entry));
 
-        // "Show" rather than "Reorder": arranging the order is now done in the lists themselves, and a
-        // second button called Reorder that behaved differently - it saves as it goes - would be a trap.
-        SendOrderToggleButton.Text = _sendOrderExpanded ? "Hide" : "Show";
-        SendOrderListContainer.IsVisible = _sendOrderExpanded;
-        SendOrderHintLabel.IsVisible = _sendOrderExpanded;
-
-        var rowsToRemove = SendOrderListContainer.Children.ToList();
-        foreach (var row in rowsToRemove) SendOrderListContainer.Children.Remove(row);
-
-        if (!_sendOrderExpanded)
-            return;
-
-        for (var i = 0; i < queue.Count; i++)
-            SendOrderListContainer.Children.Add(CreateSendOrderRow(queue[i], i, queue.Count));
-    }
-
-    private void OnToggleSendOrderClicked(object? sender, EventArgs e)
-    {
-        _sendOrderExpanded = !_sendOrderExpanded;
-        RefreshSendOrder();
-    }
-
-    private View CreateSendOrderRow(FriendConfig friend, int index, int total)
-    {
-        var grid = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitionCollection
-            {
-                new ColumnDefinition { Width = new GridLength(20) },
-                new ColumnDefinition { Width = new GridLength(24) },
-                new ColumnDefinition { Width = GridLength.Star },
-                new ColumnDefinition { Width = GridLength.Auto },
-                new ColumnDefinition { Width = GridLength.Auto }
-            },
-            ColumnSpacing = 4
-        };
-
-        // The grab handle, and only an affordance: the drag itself is on the whole row, so the target is
-        // the row rather than a 20pt glyph the user has to hit exactly.
-        var handle = new Label
-        {
-            Text = "⠿",
-            FontSize = 16,
-            HorizontalTextAlignment = TextAlignment.Center,
-            VerticalTextAlignment = TextAlignment.Center,
-            VerticalOptions = LayoutOptions.Center
-        };
-        handle.SetAppThemeColor(Label.TextColorProperty,
-            GetThemeColor("Gray400", "#8B8F96"), GetThemeColor("Gray400", "#8B8F96"));
-        grid.Children.Add(handle);
-
-        var position = new Label
-        {
-            Text = (index + 1).ToString(),
-            FontFamily = "InterSemiBold",
-            FontSize = 14,
-            HorizontalTextAlignment = TextAlignment.Center,
-            VerticalTextAlignment = TextAlignment.Center,
-            VerticalOptions = LayoutOptions.Center
-        };
-        position.SetAppThemeColor(Label.TextColorProperty,
-            GetThemeColor("Primary", "#FE2C55"), GetThemeColor("Primary", "#FE2C55"));
-        Grid.SetColumn(position, 1);
-        grid.Children.Add(position);
-
-        var displayName = string.IsNullOrEmpty(friend.DisplayName) ? friend.Username : friend.DisplayName;
-        var infoStack = new VerticalStackLayout { Spacing = 2, VerticalOptions = LayoutOptions.Center };
-        infoStack.Children.Add(new Label { Text = displayName, FontSize = 14, FontFamily = "InterMedium" });
-        infoStack.Children.Add(new Label
-        {
-            Text = friend.IsGroup ? "Group" : $"@{friend.Username}",
-            FontSize = 12,
-            TextColor = GetThemeColor("Gray400", "#8B8F96")
-        });
-        Grid.SetColumn(infoStack, 2);
-        grid.Children.Add(infoStack);
-
-        grid.Children.Add(CreateSendOrderMoveButton(friend, up: true, canMove: index > 0, column: 3));
-        grid.Children.Add(CreateSendOrderMoveButton(friend, up: false, canMove: index < total - 1, column: 4));
-
-        var row = new Border
-        {
-            StrokeThickness = 0,
-            StrokeShape = new RoundRectangle { CornerRadius = 12 },
-            Padding = new Thickness(10, 6)
-        };
-        row.SetAppThemeColor(Border.BackgroundColorProperty,
-            GetThemeColor("Gray100", "#F3F4F6"), GetThemeColor("Gray900", "#111827"));
-        row.Content = grid;
-
-        AttachSendOrderDragAndDrop(row, friend);
-        return row;
-    }
-
-    private Button CreateSendOrderMoveButton(FriendConfig friend, bool up, bool canMove, int column)
-    {
-        var button = new Button
-        {
-            Text = up ? "↑" : "↓",
-            BackgroundColor = Colors.Transparent,
-            FontSize = 18,
-            Padding = new Thickness(10, 0),
-            HeightRequest = 40,
-            WidthRequest = 44,
-            VerticalOptions = LayoutOptions.Center,
-            IsEnabled = canMove && !_lastIsRunning
-        };
-        button.SetAppThemeColor(Button.TextColorProperty,
-            GetThemeColor("Primary", "#FE2C55"), GetThemeColor("Primary", "#FE2C55"));
-
-        // The entry at either end has nowhere to go, so its arrow is dimmed rather than silently
-        // doing nothing.
-        button.Opacity = button.IsEnabled ? 1.0 : 0.35;
-
-        button.Clicked += (s, e) => MoveSendOrderEntry(friend.Id, up);
-        Grid.SetColumn(button, column);
-        return button;
-    }
-
-    /// <summary>
-    /// Applies one arrow press and saves it. Shares the save tail with a drop, so both ways of
-    /// reordering are stored the same way and a failed write is reported either way.
-    /// </summary>
-    private void MoveSendOrderEntry(string friendId, bool up)
-    {
-        var all = _settingsService.GetFriendsList();
-        var moved = up ? FriendOrder.TryMoveUp(all, friendId) : FriendOrder.TryMoveDown(all, friendId);
-
-        if (!moved)
-            return;
-
-        SaveSendOrder(all);
-    }
-
-    /// <summary>
-    /// Applies a drop and saves it: the dragged row takes the place of the row it was dropped on.
-    /// </summary>
-    private void MoveSendOrderEntryTo(string draggedId, string targetId)
-    {
-        var all = _settingsService.GetFriendsList();
-
-        if (!FriendOrder.TryMoveTo(all, draggedId, targetId))
-            return;
-
-        SaveSendOrder(all);
-    }
-
-    /// <summary>
-    /// Saves a reordered list and redraws it.
-    /// <para>
-    /// The save result is checked rather than discarded, because a silent write failure would look
-    /// exactly like the reorder not working.
-    /// </para>
-    /// </summary>
-    private void SaveSendOrder(List<FriendConfig> all)
-    {
-        if (!_settingsService.TrySaveFriendsList(all, out var error))
-            _ = DisplayAlert("Could not save order", error ?? "The new order was not saved.", "OK");
-
-        // Re-reads the saved list either way, so the page shows what was actually stored.
-        LoadLists();
-    }
-
-    /// <summary>
-    /// Makes one row draggable onto another row.
-    /// <para>
-    /// The row is both the drag source and the drop target. Android starts a drag on a long press, so the
-    /// row has to be pressed and held - which is why the arrows are kept as well: they are the same move
-    /// without a gesture that has to be discovered, and they still work if a drag does not start on a
-    /// given device.
-    /// </para>
-    /// </summary>
-    private void AttachSendOrderDragAndDrop(Border row, FriendConfig friend)
-    {
-        // A run in progress owns the order, so reordering is closed while it works - the same rule the
-        // arrows follow.
-        var canReorder = !_lastIsRunning;
-
-        var drag = new DragGestureRecognizer { CanDrag = canReorder };
-
-        drag.DragStarting += (_, _) =>
-        {
-            _draggingFriendId = friend.Id;
-
-            // Dimmed while it is in the air, so the list underneath reads as the place it is going.
-            row.Opacity = 0.4;
-        };
-
-        // Cleared whatever happened, including a drag that ended nowhere.
-        drag.DropCompleted += (_, _) =>
-        {
-            _draggingFriendId = null;
-            row.Opacity = 1.0;
-        };
-
-        row.GestureRecognizers.Add(drag);
-
-        var drop = new DropGestureRecognizer { AllowDrop = canReorder };
-
-        drop.DragOver += (_, _) =>
-        {
-            if (IsDraggingAnotherEntry(friend.Id))
-                HighlightDropTarget(row, true);
-        };
-
-        drop.DragLeave += (_, _) => HighlightDropTarget(row, false);
-
-        drop.Drop += (_, _) =>
-        {
-            HighlightDropTarget(row, false);
-
-            if (!IsDraggingAnotherEntry(friend.Id))
-                return;
-
-            // Read before the move, which rebuilds every row and so replaces the handler holding this.
-            var draggedId = _draggingFriendId;
-            if (!string.IsNullOrEmpty(draggedId))
-                MoveSendOrderEntryTo(draggedId, friend.Id);
-        };
-
-        row.GestureRecognizers.Add(drop);
+        ReorderCountLabel.Text = allItems.Count == 1
+            ? Localization.T("Fr_ReorderCountOne")
+            : string.Format(Localization.T("Fr_ReorderCountMany"), allItems.Count);
     }
 
     /// <summary>
@@ -490,9 +272,6 @@ public partial class FriendsPage : ContentPage
         AddFriendPanel.IsVisible = false;
         AddGroupPanel.IsVisible = false;
 
-        // The card reads the stored order, which is now the order being replaced.
-        _sendOrderExpanded = false;
-
         LoadLists();
     }
 
@@ -511,7 +290,7 @@ public partial class FriendsPage : ContentPage
 
         if (!_settingsService.TrySaveFriendsList(draft.ToSave(), out var error))
         {
-            await DisplayAlert("Could not save order", error ?? "The new order was not saved.", "OK");
+            await DisplayAlert(Localization.T("Fr_SaveOrderFailedTitle"), error ?? Localization.T("Fr_SaveOrderFailedBody"), Localization.T("Common_OK"));
             return;
         }
 
@@ -532,6 +311,44 @@ public partial class FriendsPage : ContentPage
     }
 
     /// <summary>
+    /// Shows or hides one of the Reorder buttons, and greys it out while a run is in progress.
+    /// </summary>
+    /// <remarks>
+    /// There are two - one in each mode's toolbar - and they have to agree, so they are painted by one
+    /// method rather than by two copies of the same three lines.
+    /// <para>
+    /// A run in progress owns the order, so reordering is not offered while it works: a move could not
+    /// affect the run already in flight.
+    /// </para>
+    /// </remarks>
+    private void SetReorderButtonState(Button button, bool reordering)
+    {
+        button.IsVisible = !reordering;
+        button.IsEnabled = !_lastIsRunning;
+        button.Opacity = _lastIsRunning ? 0.6 : 1.0;
+    }
+
+    /// <summary>
+    /// Decides which of the three views is on screen: the Friends list, the Groups list, or the arranging
+    /// list.
+    /// </summary>
+    /// <remarks>
+    /// Arranging is a mode of its own rather than a state of one of the two lists, because it edits the one
+    /// saved sequence that both lists are filtered views of. Taking the switcher and the toolbars off the
+    /// screen while it is on leaves the two ways out - Save and Cancel - as the only things to press.
+    /// </remarks>
+    private void ApplyModeVisibility()
+    {
+        var reordering = _reorderDraft is not null;
+
+        ModeSwitcher.IsVisible = !reordering;
+        ReorderModeContainer.IsVisible = reordering;
+
+        FriendsModeContainer.IsVisible = !reordering && !_isGroupMode;
+        GroupsModeContainer.IsVisible = !reordering && _isGroupMode;
+    }
+
+    /// <summary>
     /// Puts the arranging state on screen: the banner, whether Save has anything to save, and the controls
     /// that would write to storage while an arrangement is staged.
     /// </summary>
@@ -540,21 +357,22 @@ public partial class FriendsPage : ContentPage
         var reordering = _reorderDraft is not null;
 
         ReorderBanner.IsVisible = reordering;
+        ApplyModeVisibility();
 
         // Save stays switched off until something has actually moved, so it cannot write an order identical
         // to the one already stored - and a user who taps it before dragging anything sees why.
         SaveOrderButton.IsEnabled = reordering && _reorderDraft!.HasChanges;
 
         // Hidden while arranging: Save and Cancel are the only two ways out, and a third button that also
-        // left the mode could be taken for one of them.
-        ReorderToggleButton.IsVisible = !reordering;
-        ReorderToggleButton.IsEnabled = !_lastIsRunning;
-        ReorderToggleButton.Opacity = _lastIsRunning ? 0.6 : 1.0;
+        // left the mode could be taken for one of them. Both toolbars carry one - friends rearrange friends,
+        // groups rearrange groups - so both are painted from here and cannot disagree.
+        SetReorderButtonState(ReorderToggleButton, reordering);
+        SetReorderButtonState(GroupReorderToggleButton, reordering);
 
         // A write during a staged arrangement would be saved against the order being replaced.
         var actionsEnabled = !reordering && !_lastIsRunning;
-        ActionButtonsGrid.IsEnabled = actionsEnabled;
-        ActionButtonsGrid.Opacity = actionsEnabled ? 1.0 : 0.6;
+        ActionButtonsRow.IsEnabled = actionsEnabled;
+        ActionButtonsRow.Opacity = actionsEnabled ? 1.0 : 0.6;
         GroupActionButtonsGrid.IsEnabled = actionsEnabled;
         GroupActionButtonsGrid.Opacity = actionsEnabled ? 1.0 : 0.6;
     }
@@ -606,9 +424,9 @@ public partial class FriendsPage : ContentPage
 
         // A disabled entry is listed here too, and says so: it is still part of the list and can still be
         // moved, but it will not be messaged.
-        var subtitle = friend.IsGroup ? "Group" : $"@{friend.Username}";
+        var subtitle = friend.IsGroup ? Localization.T("Common_Group") : $"@{friend.Username}";
         if (!friend.IsEnabled)
-            subtitle += " · disabled";
+            subtitle += Localization.T("Fr_DisabledSuffix");
 
         infoStack.Children.Add(new Label
         {
@@ -627,7 +445,7 @@ public partial class FriendsPage : ContentPage
     }
 
     /// <summary>
-    /// Makes one card draggable onto another card of the same kind. The move is staged, so this writes
+    /// Makes one card draggable onto another card, of either kind. The move is staged, so this writes
     /// nothing: it redraws the list from the draft.
     /// </summary>
     private void AttachReorderDragAndDrop(Border row, FriendConfig friend)
@@ -688,7 +506,9 @@ public partial class FriendsPage : ContentPage
 
     private void UpdateStatsCard(List<FriendConfig> allItems)
     {
-        FriendsStatsCard.IsVisible = allItems.Count > 0;
+        // Hidden while arranging: the figures describe the stored list, and the list on screen is a draft
+        // that has not been saved yet.
+        FriendsStatsCard.IsVisible = _reorderDraft is null && allItems.Count > 0;
         TotalFriendsLabel.Text = allItems.Count.ToString();
         EnabledFriendsLabel.Text = allItems.Count(f => f.IsEnabled).ToString();
         var today = DateTime.Now.Date;
@@ -745,10 +565,10 @@ public partial class FriendsPage : ContentPage
         var infoStack = new VerticalStackLayout { Spacing = 3 };
         var displayName = string.IsNullOrEmpty(friend.DisplayName) ? friend.Username : friend.DisplayName;
         infoStack.Children.Add(new Label { Text = displayName, FontSize = 15, FontFamily = "InterSemiBold" });
-        var subtitleText = friend.IsGroup ? "Group" : $"@{friend.Username}";
+        var subtitleText = friend.IsGroup ? Localization.T("Common_Group") : $"@{friend.Username}";
         infoStack.Children.Add(new Label { Text = subtitleText, FontSize = 13, TextColor = GetThemeColor("Gray400", "#8B8F96") });
         if (friend.LastMessageSent.HasValue)
-            infoStack.Children.Add(new Label { Text = $"Last sent: {friend.LastMessageSent.Value:MMM dd}", FontSize = 12, TextColor = GetThemeColor("Gray400", "#8B8F96") });
+            infoStack.Children.Add(new Label { Text = string.Format(Localization.T("Fr_LastSent"), friend.LastMessageSent.Value.ToString("MMM dd")), FontSize = 12, TextColor = GetThemeColor("Gray400", "#8B8F96") });
 
         // Shows at a glance that this entry sends something different, so a custom message is never
         // set by accident and forgotten.
@@ -756,7 +576,7 @@ public partial class FriendsPage : ContentPage
         {
             var customLabel = new Label
             {
-                Text = $"Own message: {TruncateForRow(friend.CustomMessage)}",
+                Text = string.Format(Localization.T("Fr_OwnMessage"), TruncateForRow(friend.CustomMessage)),
                 FontSize = 12,
                 LineBreakMode = LineBreakMode.TailTruncation,
                 MaxLines = 1,
@@ -768,14 +588,15 @@ public partial class FriendsPage : ContentPage
 
         grid.Children.Add(infoStack);
 
-        var messageButton = new Button { Text = "Message", BackgroundColor = Colors.Transparent, FontSize = 12, Padding = new Thickness(8), HeightRequest = 44, VerticalOptions = LayoutOptions.Center, IsEnabled = !_lastIsRunning, Opacity = _lastIsRunning ? 0.6 : 1.0 };
+        var messageButton = new Button { Text = Localization.T("Fr_Message"), BackgroundColor = Colors.Transparent, FontSize = 12, Padding = new Thickness(8), HeightRequest = 44, VerticalOptions = LayoutOptions.Center, IsEnabled = !_lastIsRunning, Opacity = _lastIsRunning ? 0.6 : 1.0 };
         messageButton.SetAppThemeColor(Button.TextColorProperty, GetThemeColor("Gray400"), GetThemeColor("Gray400"));
         messageButton.Clicked += async (s, e) =>
         {
-            var noun = friend.IsGroup ? "group" : $"@{friend.Username}";
-            var promptTitle = friend.IsGroup ? "Group Message" : "Friend Message";
-            var promptMessage = $"Message to send to {noun}.\n\nLeave blank to use the shared message from the Dashboard. "
-                              + "You can still use {name} and {username} here.";
+            var promptTitle = friend.IsGroup ? Localization.T("Fr_MessagePromptGroupTitle") : Localization.T("Fr_MessagePromptFriendTitle");
+            var promptMessage = (friend.IsGroup
+                    ? Localization.T("Fr_MessagePromptGroup")
+                    : string.Format(Localization.T("Fr_MessagePromptFriend"), friend.Username))
+                + "\n\n" + Localization.T("Fr_MessagePromptBlank") + " " + Localization.T("Fr_MessagePromptTokens");
 
             var entered = await DisplayPromptAsync(promptTitle, promptMessage, initialValue: friend.CustomMessage ?? string.Empty);
 
@@ -788,25 +609,25 @@ public partial class FriendsPage : ContentPage
         };
         Grid.SetColumn(messageButton, 1); grid.Children.Add(messageButton);
 
-        var editButton = new Button { Text = "Edit", BackgroundColor = Colors.Transparent, FontSize = 12, Padding = new Thickness(8), HeightRequest = 44, VerticalOptions = LayoutOptions.Center, IsEnabled = !_lastIsRunning, Opacity = _lastIsRunning ? 0.6 : 1.0 };
+        var editButton = new Button { Text = Localization.T("Fr_Edit"), BackgroundColor = Colors.Transparent, FontSize = 12, Padding = new Thickness(8), HeightRequest = 44, VerticalOptions = LayoutOptions.Center, IsEnabled = !_lastIsRunning, Opacity = _lastIsRunning ? 0.6 : 1.0 };
         editButton.SetAppThemeColor(Button.TextColorProperty, GetThemeColor("Gray400"), GetThemeColor("Gray400"));
         editButton.Clicked += async (s, e) =>
         {
-            var promptTitle = friend.IsGroup ? "Edit Group" : "Edit Friend";
+            var promptTitle = friend.IsGroup ? Localization.T("Fr_EditGroupTitle") : Localization.T("Fr_EditFriendTitle");
             var promptMessage = friend.IsGroup
-                ? "Enter the group name (must match the TikTok chat header):"
-                : "Enter new display name:";
+                ? Localization.T("Fr_EditGroupPrompt")
+                : Localization.T("Fr_EditFriendPrompt");
             var newName = await DisplayPromptAsync(promptTitle, promptMessage, initialValue: friend.DisplayName ?? friend.Username);
             if (newName != null) { friend.DisplayName = newName; _settingsService.UpdateFriend(friend); LoadLists(); }
         };
         Grid.SetColumn(editButton, 2); grid.Children.Add(editButton);
 
-        var deleteButton = new Button { Text = "Delete", BackgroundColor = Colors.Transparent, FontSize = 12, Padding = new Thickness(8), HeightRequest = 44, VerticalOptions = LayoutOptions.Center, IsEnabled = !_lastIsRunning, Opacity = _lastIsRunning ? 0.6 : 1.0 };
+        var deleteButton = new Button { Text = Localization.T("Fr_Delete"), BackgroundColor = Colors.Transparent, FontSize = 12, Padding = new Thickness(8), HeightRequest = 44, VerticalOptions = LayoutOptions.Center, IsEnabled = !_lastIsRunning, Opacity = _lastIsRunning ? 0.6 : 1.0 };
         deleteButton.TextColor = GetThemeColor("DeleteColor", "#EE1D52");
         deleteButton.Clicked += async (s, e) =>
         {
-            var noun = friend.IsGroup ? "group" : "friend";
-            var confirm = await DisplayAlert($"Remove {noun}", $"Remove {displayName} from the list?", "Remove", "Cancel");
+            var removeTitle = friend.IsGroup ? Localization.T("Fr_RemoveGroupTitle") : Localization.T("Fr_RemoveFriendTitle");
+            var confirm = await DisplayAlert(removeTitle, string.Format(Localization.T("Fr_RemoveBody"), displayName), Localization.T("Fr_RemoveConfirm"), Localization.T("Common_Cancel"));
             if (confirm) { _settingsService.RemoveFriend(friend.Id); LoadLists(); }
         };
         Grid.SetColumn(deleteButton, 3); grid.Children.Add(deleteButton);
@@ -818,9 +639,6 @@ public partial class FriendsPage : ContentPage
         {
             friend.IsEnabled = e.Value;
             _settingsService.UpdateFriend(friend);
-
-            // Disabling an entry takes it out of the queue, so the send order has to be redrawn.
-            RefreshSendOrder();
         };
         Grid.SetColumn(toggleSwitch, 4); grid.Children.Add(toggleSwitch);
 
@@ -840,8 +658,7 @@ public partial class FriendsPage : ContentPage
         GroupsModeTabBorder.BackgroundColor = Colors.Transparent;
         GroupsModeTabLabel.TextColor = GetThemeColor("Gray600", "#5F636A");
 
-        FriendsModeContainer.IsVisible = true;
-        GroupsModeContainer.IsVisible = false;
+        ApplyModeVisibility();
     }
 
     private void OnGroupsModeTapped(object? sender, TappedEventArgs e)
@@ -854,8 +671,7 @@ public partial class FriendsPage : ContentPage
         FriendsModeTabBorder.BackgroundColor = Colors.Transparent;
         FriendsModeTabLabel.TextColor = GetThemeColor("Gray600", "#5F636A");
 
-        FriendsModeContainer.IsVisible = false;
-        GroupsModeContainer.IsVisible = true;
+        ApplyModeVisibility();
     }
 
     // ─── Friends actions ─────────────────────────────────────────────────────
@@ -877,10 +693,10 @@ public partial class FriendsPage : ContentPage
     {
         var username = NewFriendUsernameEntry.Text?.Trim().TrimStart('@');
         var displayName = NewFriendDisplayNameEntry.Text?.Trim();
-        if (string.IsNullOrEmpty(username)) { await DisplayAlert("Error", "Please enter a username", "OK"); return; }
+        if (string.IsNullOrEmpty(username)) { await DisplayAlert(Localization.T("Fr_ErrorTitle"), Localization.T("Fr_EnterUsername"), Localization.T("Common_OK")); return; }
         var existing = _settingsService.GetFriendsList();
         if (existing.Any(f => !f.IsGroup && f.Username.Equals(username, StringComparison.OrdinalIgnoreCase)))
-        { await DisplayAlert("Error", "This friend is already in your list", "OK"); return; }
+        { await DisplayAlert(Localization.T("Fr_ErrorTitle"), Localization.T("Fr_FriendExists"), Localization.T("Common_OK")); return; }
         var friend = new FriendConfig
         {
             Username = username,
@@ -891,7 +707,7 @@ public partial class FriendsPage : ContentPage
         };
         if (!_settingsService.TryAddFriend(friend, out var error))
         {
-            await DisplayAlert("Could Not Save", error ?? "Friend could not be saved on this device.", "OK");
+            await DisplayAlert(Localization.T("Fr_CouldNotSaveTitle"), error ?? Localization.T("Fr_FriendSaveFailed"), Localization.T("Common_OK"));
             return;
         }
         AddFriendPanel.IsVisible = false;
@@ -916,8 +732,8 @@ public partial class FriendsPage : ContentPage
         var all = _settingsService.GetFriendsList();
         var groupsOnly = all.Where(f => f.IsGroup).ToList();
         if (all.Count == groupsOnly.Count) return;
-        bool confirm = await DisplayAlert("Clear Friends",
-            "Remove all direct messages? Group chats will not be affected.", "Clear", "Cancel");
+        bool confirm = await DisplayAlert(Localization.T("Fr_ClearFriendsTitle"),
+            Localization.T("Fr_ClearFriendsBody"), Localization.T("Fr_Clear"), Localization.T("Common_Cancel"));
         if (confirm)
         {
             _settingsService.SaveFriendsList(groupsOnly);
@@ -944,11 +760,11 @@ public partial class FriendsPage : ContentPage
     {
         var matchName = NewGroupNameEntry.Text?.Trim();
         var displayName = NewGroupDisplayNameEntry.Text?.Trim();
-        if (string.IsNullOrEmpty(matchName)) { await DisplayAlert("Error", "Please enter a group chat name", "OK"); return; }
+        if (string.IsNullOrEmpty(matchName)) { await DisplayAlert(Localization.T("Fr_ErrorTitle"), Localization.T("Fr_EnterGroupName"), Localization.T("Common_OK")); return; }
 
         var existing = _settingsService.GetFriendsList();
         if (existing.Any(f => f.IsGroup && f.DisplayName.Equals(matchName, StringComparison.OrdinalIgnoreCase)))
-        { await DisplayAlert("Error", "This group is already in your list", "OK"); return; }
+        { await DisplayAlert(Localization.T("Fr_ErrorTitle"), Localization.T("Fr_GroupExists"), Localization.T("Common_OK")); return; }
 
         // For groups, DisplayName doubles as the matching key against the TikTok chat header.
         var group = new FriendConfig
@@ -961,7 +777,7 @@ public partial class FriendsPage : ContentPage
         };
         if (!_settingsService.TryAddFriend(group, out var error))
         {
-            await DisplayAlert("Could Not Save", error ?? "Group could not be saved on this device.", "OK");
+            await DisplayAlert(Localization.T("Fr_CouldNotSaveTitle"), error ?? Localization.T("Fr_GroupSaveFailed"), Localization.T("Common_OK"));
             return;
         }
         AddGroupPanel.IsVisible = false;
@@ -976,8 +792,8 @@ public partial class FriendsPage : ContentPage
         var all = _settingsService.GetFriendsList();
         var friendsOnly = all.Where(f => !f.IsGroup).ToList();
         if (all.Count == friendsOnly.Count) return;
-        bool confirm = await DisplayAlert("Clear Groups",
-            "Remove all group chats? Direct messages will not be affected.", "Clear", "Cancel");
+        bool confirm = await DisplayAlert(Localization.T("Fr_ClearGroupsTitle"),
+            Localization.T("Fr_ClearGroupsBody"), Localization.T("Fr_Clear"), Localization.T("Common_Cancel"));
         if (confirm)
         {
             _settingsService.SaveFriendsList(friendsOnly);
@@ -1002,7 +818,7 @@ public partial class FriendsPage : ContentPage
         {
             var result = await FilePicker.Default.PickAsync(new PickOptions
             {
-                PickerTitle = "Select friend list JSON file",
+                PickerTitle = Localization.T("Fr_PickFileTitle"),
                 FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
                 {
                     { DevicePlatform.Android, new[] { "application/json", "*/*" } },
@@ -1016,7 +832,7 @@ public partial class FriendsPage : ContentPage
             using (var stream = await result.OpenReadAsync())
             using (var reader = new System.IO.StreamReader(stream))
                 json = await reader.ReadToEndAsync();
-            if (string.IsNullOrWhiteSpace(json)) { await DisplayAlert("Import Failed", "The selected file is empty.", "OK"); return; }
+            if (string.IsNullOrWhiteSpace(json)) { await DisplayAlert(Localization.T("Fr_ImportFailedTitle"), Localization.T("Fr_ImportFileEmpty"), Localization.T("Common_OK")); return; }
 
             List<FriendConfig>? imported;
             try
@@ -1024,8 +840,8 @@ public partial class FriendsPage : ContentPage
                 var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                 imported = System.Text.Json.JsonSerializer.Deserialize<List<FriendConfig>>(json, options);
             }
-            catch { await DisplayAlert("Import Failed", "The file is not a valid friend list.", "OK"); return; }
-            if (imported == null || imported.Count == 0) { await DisplayAlert("Import", "The file contains no entries.", "OK"); return; }
+            catch { await DisplayAlert(Localization.T("Fr_ImportFailedTitle"), Localization.T("Fr_ImportFileInvalid"), Localization.T("Common_OK")); return; }
+            if (imported == null || imported.Count == 0) { await DisplayAlert(Localization.T("Fr_Import"), Localization.T("Fr_ImportNoEntries"), Localization.T("Common_OK")); return; }
 
             var existing = _settingsService.GetFriendsList();
             int added = 0, updated = 0, skipped = 0;
@@ -1057,9 +873,9 @@ public partial class FriendsPage : ContentPage
             }
             _settingsService.SaveFriendsList(existing);
             LoadLists();
-            await DisplayAlert("Import Complete", $"Import complete.\n\nAdded: {added}\nUpdated: {updated}\nSkipped: {skipped}", "OK");
+            await DisplayAlert(Localization.T("Fr_ImportCompleteTitle"), string.Format(Localization.T("Fr_ImportCompleteBody"), added, updated, skipped), Localization.T("Common_OK"));
         }
-        catch (Exception ex) { await DisplayAlert("Import Failed", $"Unexpected error: {ex.Message}", "OK"); }
+        catch (Exception ex) { await DisplayAlert(Localization.T("Fr_ImportFailedTitle"), string.Format(Localization.T("Fr_ImportUnexpected"), ex.Message), Localization.T("Common_OK")); }
     }
 
     // ─── Login banner ────────────────────────────────────────────────────────
@@ -1111,14 +927,14 @@ public partial class FriendsPage : ContentPage
         try
         {
             var entries = _settingsService.GetFriendsList();
-            if (entries.Count == 0) { await DisplayAlert("Export", "Your list is empty.", "OK"); return; }
+            if (entries.Count == 0) { await DisplayAlert(Localization.T("Fr_Export"), Localization.T("Fr_ExportEmpty"), Localization.T("Common_OK")); return; }
             var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
             var json = System.Text.Json.JsonSerializer.Serialize(entries, options);
             var fileName = $"streak_friends_{DateTime.Now:yyyyMMdd_HHmm}.json";
             var filePath = System.IO.Path.Combine(FileSystem.CacheDirectory, fileName);
             await System.IO.File.WriteAllTextAsync(filePath, json);
-            await Share.Default.RequestAsync(new ShareFileRequest { Title = "Export Friend List", File = new ShareFile(filePath, "application/json") });
+            await Share.Default.RequestAsync(new ShareFileRequest { Title = Localization.T("Fr_ExportShareTitle"), File = new ShareFile(filePath, "application/json") });
         }
-        catch (Exception ex) { await DisplayAlert("Export Failed", $"Could not export: {ex.Message}", "OK"); }
+        catch (Exception ex) { await DisplayAlert(Localization.T("Fr_ExportFailedTitle"), string.Format(Localization.T("Fr_ExportFailedBody"), ex.Message), Localization.T("Common_OK")); }
     }
 }

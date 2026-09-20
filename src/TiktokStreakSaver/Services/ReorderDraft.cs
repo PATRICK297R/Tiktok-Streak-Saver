@@ -51,10 +51,14 @@ public sealed class ReorderDraft
     public bool HasChanges => !_entries.Select(e => e.Id).SequenceEqual(_startingOrder);
 
     /// <summary>
-    /// Moves one entry to another's place within its own section. Staged only: storage is untouched.
+    /// Moves one entry to another's place in the send order. Staged only: storage is untouched.
+    /// <para>
+    /// Any entry can be dropped on any other, including a friend onto a group: the saved list is one
+    /// sequence, so which of the two is messaged first is part of the order the user is arranging.
+    /// </para>
     /// </summary>
     public bool Move(string? draggedId, string? targetId) =>
-        FriendOrder.TryMoveWithinSection(_entries, draggedId, targetId);
+        FriendOrder.TryMoveWithinList(_entries, draggedId, targetId);
 
     /// <summary>
     /// The order to save, as copies again, so that a draft cannot be altered through the list that was

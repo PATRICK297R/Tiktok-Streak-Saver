@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:svc="clr-namespace:TiktokStreakSaver.Services"
              xmlns:views="clr-namespace:TiktokStreakSaver.Views"
              x:Class="TiktokStreakSaver.Pages.FriendsPage"
-             Title="Friends"
+             Title="{svc:Tr Nav_Friends}"
              Shell.NavBarIsVisible="False"
              Shell.TabBarIsVisible="False"
              NavigationPage.HasNavigationBar="False"
@@ -16,10 +17,10 @@
                 <VerticalStackLayout Padding="20" Spacing="16">
 
                     <VerticalStackLayout Spacing="2" Margin="0,8,0,0">
-                        <Label Text="List Management"
+                        <Label Text="{svc:Tr Fr_Title}"
                                Style="{StaticResource PageTitleLabel}"
                                HorizontalOptions="Start"/>
-                        <Label Text="Manage direct messages and group chats"
+                        <Label Text="{svc:Tr Fr_Subtitle}"
                                FontFamily="InterRegular"
                                FontSize="13"
                                TextColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray400}}"
@@ -45,17 +46,17 @@
                                    TextColor="{AppThemeBinding Light=White, Dark=Black}"
                                    VerticalOptions="Center"/>
                             <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
-                                <Label Text="TikTok login required"
+                                <Label Text="{svc:Tr Fr_LoginRequired}"
                                        FontFamily="InterSemiBold"
                                        FontSize="14"
                                        TextColor="{AppThemeBinding Light=#9A3412, Dark=#FBBF24}"/>
-                                <Label Text="You must log in to TikTok before any streak messages can be sent."
+                                <Label Text="{svc:Tr Fr_LoginRequiredBody}"
                                        FontFamily="InterRegular"
                                        FontSize="12"
                                        TextColor="{AppThemeBinding Light=#7C2D12, Dark={StaticResource Gray300}}"/>
                             </VerticalStackLayout>
                             <Button Grid.Column="2"
-                                    Text="Log in"
+                                    Text="{svc:Tr Fr_LogIn}"
                                     FontSize="12" Padding="12,0" HeightRequest="36"
                                     CornerRadius="14"
                                     BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
@@ -83,17 +84,17 @@
                                    TextColor="{AppThemeBinding Light=White, Dark=Black}"
                                    VerticalOptions="Center"/>
                             <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
-                                <Label Text="Battery restrictions are enabled"
+                                <Label Text="{svc:Tr Fr_BatteryTitle}"
                                        FontFamily="InterSemiBold"
                                        FontSize="14"
                                        TextColor="{AppThemeBinding Light=#854D0E, Dark=#FACC15}"/>
-                                <Label Text="Your device may stop streaks from running on schedule. Disable battery optimization for this app to keep streaks reliable."
+                                <Label Text="{svc:Tr Fr_BatteryBody}"
                                        FontFamily="InterRegular"
                                        FontSize="12"
                                        TextColor="{AppThemeBinding Light=#713F12, Dark={StaticResource Gray300}}"/>
                             </VerticalStackLayout>
                             <Button Grid.Column="2"
-                                    Text="Allow"
+                                    Text="{svc:Tr Fr_Allow}"
                                     FontSize="12" Padding="12,0" HeightRequest="36"
                                     CornerRadius="14"
                                     BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
@@ -102,156 +103,165 @@
                         </Grid>
                     </Border>
 
-                    <!-- Send order. The runner messages entries in the order they sit in the saved
-                         list, but the Friends and Groups sections below split that one list in two -
-                         so a group saved before a friend is messaged first while being displayed
-                         underneath. This card shows the real sequence. -->
-                    <Border x:Name="SendOrderCard"
-                            Style="{StaticResource SectionCard}"
-                            IsVisible="False">
-                        <VerticalStackLayout Spacing="12">
-                            <Grid ColumnDefinitions="*, Auto" ColumnSpacing="8">
-                                <VerticalStackLayout Spacing="2" VerticalOptions="Center">
-                                    <Label Text="Send order"
-                                           Style="{StaticResource SectionLabel}"/>
-                                    <Label x:Name="SendOrderSubtitleLabel"
-                                           Text=""
-                                           Style="{StaticResource DataLabel}"/>
-                                </VerticalStackLayout>
-                                <Button x:Name="SendOrderToggleButton"
-                                        Grid.Column="1"
-                                        Text="Reorder"
-                                        Style="{StaticResource TextButton}"
-                                        VerticalOptions="Center"
-                                        Clicked="OnToggleSendOrderClicked"/>
-                            </Grid>
-
-                            <VerticalStackLayout x:Name="SendOrderListContainer" Spacing="6" IsVisible="False"/>
-
-                            <Label x:Name="SendOrderHintLabel"
-                                   Text="Drag a row or use the arrows. Moves here are saved straight away — to arrange the list and save it yourself, use Reorder above. The entry at the top is messaged first."
-                                   Style="{StaticResource DataLabel}"
-                                   LineBreakMode="WordWrap"
-                                   IsVisible="False"/>
-                        </VerticalStackLayout>
+                    <!-- Mode Switcher (Friends / Groups). The way into arranging the order sits in each
+                         mode's own toolbar, so it is one press away from wherever the user is looking. -->
+                    <Border x:Name="ModeSwitcher"
+                            Stroke="{AppThemeBinding Light={StaticResource BorderColorLight}, Dark={StaticResource BorderColorDark}}"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 22"
+                            BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}">
+                        <Grid ColumnDefinitions="*,*" HeightRequest="44">
+                            <Border x:Name="FriendsModeTabBorder"
+                                    Grid.Column="0"
+                                    StrokeThickness="0"
+                                    BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
+                                    StrokeShape="RoundRectangle 22">
+                                <Label x:Name="FriendsModeTabLabel"
+                                       Text="{svc:Tr Nav_Friends}"
+                                       TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
+                                       FontFamily="InterSemiBold"
+                                       FontSize="14"
+                                       HorizontalOptions="Center" VerticalOptions="Center"/>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnFriendsModeTapped"/>
+                                </Border.GestureRecognizers>
+                            </Border>
+                            <Border x:Name="GroupsModeTabBorder"
+                                    Grid.Column="1"
+                                    StrokeThickness="0"
+                                    BackgroundColor="Transparent"
+                                    StrokeShape="RoundRectangle 22">
+                                <Label x:Name="GroupsModeTabLabel"
+                                       Text="{svc:Tr Fr_Groups}"
+                                       TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray400}}"
+                                       FontFamily="InterSemiBold"
+                                       FontSize="14"
+                                       HorizontalOptions="Center" VerticalOptions="Center"/>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnGroupsModeTapped"/>
+                                </Border.GestureRecognizers>
+                            </Border>
+                        </Grid>
                     </Border>
-
-                    <!-- Mode Switcher (Friends / Groups), with the way into arranging the order. The order
-                         is arranged in the lists themselves rather than in a separate view, so the toggle
-                         sits with the lists it applies to. -->
-                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                        <Border Grid.Column="0"
-                                Stroke="{AppThemeBinding Light={StaticResource BorderColorLight}, Dark={StaticResource BorderColorDark}}"
-                                StrokeThickness="1"
-                                StrokeShape="RoundRectangle 22"
-                                BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}">
-                            <Grid ColumnDefinitions="*,*" HeightRequest="44">
-                                <Border x:Name="FriendsModeTabBorder"
-                                        Grid.Column="0"
-                                        StrokeThickness="0"
-                                        BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
-                                        StrokeShape="RoundRectangle 22">
-                                    <Label x:Name="FriendsModeTabLabel"
-                                           Text="Friends"
-                                           TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
-                                           FontFamily="InterSemiBold"
-                                           FontSize="14"
-                                           HorizontalOptions="Center" VerticalOptions="Center"/>
-                                    <Border.GestureRecognizers>
-                                        <TapGestureRecognizer Tapped="OnFriendsModeTapped"/>
-                                    </Border.GestureRecognizers>
-                                </Border>
-                                <Border x:Name="GroupsModeTabBorder"
-                                        Grid.Column="1"
-                                        StrokeThickness="0"
-                                        BackgroundColor="Transparent"
-                                        StrokeShape="RoundRectangle 22">
-                                    <Label x:Name="GroupsModeTabLabel"
-                                           Text="Groups"
-                                           TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray400}}"
-                                           FontFamily="InterSemiBold"
-                                           FontSize="14"
-                                           HorizontalOptions="Center" VerticalOptions="Center"/>
-                                    <Border.GestureRecognizers>
-                                        <TapGestureRecognizer Tapped="OnGroupsModeTapped"/>
-                                    </Border.GestureRecognizers>
-                                </Border>
-                            </Grid>
-                        </Border>
-                        <Button x:Name="ReorderToggleButton"
-                                Grid.Column="1"
-                                Text="Reorder"
-                                Style="{StaticResource TextButton}"
-                                VerticalOptions="Center"
-                                Clicked="OnToggleReorderModeClicked"/>
-                    </Grid>
 
                     <!--
                         Shown while the order is being arranged. The moves are staged: they change the list on
                         screen and are only written when Save is tapped, so backing out leaves the stored
                         order exactly as it was.
+
+                        Kept deliberately quiet. It used to be a pink panel with a pink outline, a pink
+                        title and a filled pink button spanning half the width, which made the notice
+                        louder than the list it was asking the user to rearrange. The state is already
+                        obvious - the rows have turned into draggable cards - so this only has to say
+                        what to do and offer the two ways out.
                     -->
                     <Border x:Name="ReorderBanner"
                             IsVisible="False"
                             StrokeThickness="1"
                             StrokeShape="RoundRectangle 16"
                             Padding="14,12"
-                            Stroke="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource Primary}}"
-                            BackgroundColor="{AppThemeBinding Light={StaticResource PrimarySubtle}, Dark={StaticResource PrimarySubtleDark}}">
-                        <VerticalStackLayout Spacing="10">
-                            <Label Text="Arranging the send order"
-                                   FontFamily="InterSemiBold"
-                                   FontSize="14"
-                                   TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource Primary}}"/>
-                            <Label Text="Press and hold a card, then drag it onto the card whose place it should take. Nothing is saved until you tap Save order."
-                                   Style="{StaticResource DataLabel}"
-                                   LineBreakMode="WordWrap"/>
-                            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-                                <Button x:Name="SaveOrderButton"
-                                        Text="Save order"
-                                        IsEnabled="False"
-                                        BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
-                                        TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
-                                        CornerRadius="14"
-                                        HeightRequest="44"
-                                        Clicked="OnSaveReorderClicked"/>
-                                <Button Grid.Column="1"
-                                        Text="Cancel"
-                                        BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray800}}"
-                                        TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
-                                        CornerRadius="14"
-                                        HeightRequest="44"
-                                        Clicked="OnCancelReorderClicked"/>
-                            </Grid>
-                        </VerticalStackLayout>
+                            Stroke="{AppThemeBinding Light={StaticResource ListItemBorderLight}, Dark={StaticResource ListItemBorderDark}}"
+                            BackgroundColor="{AppThemeBinding Light={StaticResource ListItemLight}, Dark={StaticResource ListItemDark}}">
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                            <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                                <Label Text="{svc:Tr Fr_ReorderBannerTitle}"
+                                       Style="{StaticResource SectionLabel}"/>
+                                <Label Text="{svc:Tr Fr_ReorderBannerBody}"
+                                       Style="{StaticResource DataLabel}"
+                                       LineBreakMode="WordWrap"/>
+                            </VerticalStackLayout>
+
+                            <Button Grid.Column="1"
+                                    Text="{svc:Tr Common_Cancel}"
+                                    Style="{StaticResource TextButton}"
+                                    VerticalOptions="Center"
+                                    Clicked="OnCancelReorderClicked"/>
+
+                            <Button x:Name="SaveOrderButton"
+                                    Grid.Column="2"
+                                    Text="{svc:Tr Common_Save}"
+                                    IsEnabled="False"
+                                    BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
+                                    TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
+                                    FontFamily="InterSemiBold"
+                                    FontSize="14"
+                                    CornerRadius="12"
+                                    HeightRequest="40"
+                                    Padding="20,0"
+                                    VerticalOptions="Center"
+                                    Clicked="OnSaveReorderClicked"/>
+                        </Grid>
                     </Border>
+
+                    <!--
+                        ════ Reorder Mode ════
+
+                        The one list the order is actually arranged in, shown instead of the Friends and
+                        Groups sections while the mode is on.
+
+                        Both kinds together, in the sequence they will be messaged. The normal view splits
+                        that one saved sequence into two filtered sections, so it cannot show where a group
+                        sits relative to a friend - and that relative position is a real part of the send
+                        order, not a display detail. Showing the sequence itself is what makes the
+                        arrangement visible and lets a drag cross between the two kinds.
+                    -->
+                    <VerticalStackLayout x:Name="ReorderModeContainer" IsVisible="False" Spacing="12">
+                        <Border Style="{StaticResource SectionCard}">
+                            <VerticalStackLayout Spacing="10">
+                                <Label x:Name="ReorderCountLabel"
+                                       Text=""
+                                       Style="{StaticResource DataLabel}"
+                                       LineBreakMode="WordWrap"/>
+                                <VerticalStackLayout x:Name="ReorderListContainer" Spacing="8"/>
+                            </VerticalStackLayout>
+                        </Border>
+                    </VerticalStackLayout>
 
                     <!-- ════ Friends Mode ════ -->
                     <VerticalStackLayout x:Name="FriendsModeContainer" IsVisible="True" Spacing="16">
                         <Border Style="{StaticResource SectionCard}">
                             <VerticalStackLayout Spacing="12">
 
-                                <Grid x:Name="ActionButtonsGrid" ColumnDefinitions="*, Auto, Auto, Auto, Auto" ColumnSpacing="10">
-                                    <Label Text="Streaks"
-                                           Style="{StaticResource SectionLabel}" VerticalOptions="Center"/>
-                                    <Button Grid.Column="1"
-                                            Text="Import"
+                                <!--
+                                    The toolbar. A FlexLayout rather than a fixed Grid: Reorder now sits here
+                                    with Import, Export, Add and Clear, which is five buttons plus the heading,
+                                    and on a narrow phone that does not fit on one line. Wrapping moves the
+                                    last button onto a second line instead of squeezing the heading to nothing
+                                    or clipping a label.
+                                -->
+                                <FlexLayout x:Name="ActionButtonsRow"
+                                            Wrap="Wrap"
+                                            Direction="Row"
+                                            JustifyContent="Start"
+                                            AlignItems="Center">
+                                    <Label Text="{svc:Tr Fr_Streaks}"
+                                           Style="{StaticResource SectionLabel}"
+                                           VerticalOptions="Center"
+                                           Margin="0,0,12,0"/>
+                                    <Button Text="{svc:Tr Fr_Import}"
                                             Style="{StaticResource TextButton}"
+                                            Margin="0,0,8,0"
                                             Clicked="OnImportFriendsClicked"/>
-                                    <Button Grid.Column="2"
-                                            Text="Export"
+                                    <Button Text="{svc:Tr Fr_Export}"
                                             Style="{StaticResource TextButton}"
+                                            Margin="0,0,8,0"
                                             Clicked="OnExportFriendsClicked"/>
-                                    <Button Grid.Column="3"
-                                            Text="Add"
+                                    <Button Text="{svc:Tr Fr_Add}"
                                             Style="{StaticResource TextButton}"
+                                            Margin="0,0,8,0"
                                             Clicked="OnAddFriendClicked"/>
-                                    <Button Grid.Column="4"
-                                            Text="Clear"
+                                    <Button Text="{svc:Tr Fr_Clear}"
                                             Style="{StaticResource TextButton}"
                                             TextColor="{AppThemeBinding Light={StaticResource DeleteColor}, Dark={StaticResource DeleteColor}}"
+                                            Margin="0,0,8,0"
                                             Clicked="OnDeleteAllFriendsClicked"/>
-                                </Grid>
+                                    <!-- Arranging friends past other friends. Hidden while arranging, because
+                                         Save and Cancel in the banner are the only two ways out of it. -->
+                                    <Button x:Name="ReorderToggleButton"
+                                            Text="{svc:Tr Fr_Reorder}"
+                                            Style="{StaticResource TextButton}"
+                                            Clicked="OnToggleReorderModeClicked"/>
+                                </FlexLayout>
 
                                 <Grid x:Name="SearchAndBulkRow" IsVisible="False"
                                       ColumnDefinitions="*, Auto, Auto" ColumnSpacing="8" Margin="0,4,0,0">
@@ -260,7 +270,7 @@
                                             StrokeShape="RoundRectangle 16"
                                             BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}">
                                         <Entry x:Name="SearchFriendEntry"
-                                               Placeholder="Search friends..."
+                                               Placeholder="{svc:Tr Fr_SearchFriends}"
                                                Margin="12,0"
                                                VerticalOptions="Center"
                                                ClearButtonVisibility="WhileEditing"
@@ -268,12 +278,12 @@
                                                TextChanged="OnSearchFriendTextChanged"/>
                                     </Border>
                                     <Button Grid.Column="1"
-                                            Text="Enable All"
+                                            Text="{svc:Tr Fr_EnableAll}"
                                             Style="{StaticResource TextButton}"
                                             FontSize="12" Padding="8,0" HeightRequest="40"
                                             Clicked="OnEnableAllClicked"/>
                                     <Button Grid.Column="2"
-                                            Text="Disable All"
+                                            Text="{svc:Tr Fr_DisableAll}"
                                             Style="{StaticResource TextButton}"
                                             FontSize="12" Padding="8,0" HeightRequest="40"
                                             TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"
@@ -285,7 +295,7 @@
                                             StrokeShape="RoundRectangle 16"
                                             BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}">
                                         <Entry x:Name="NewFriendUsernameEntry"
-                                               Placeholder="TikTok username (without @)"
+                                               Placeholder="{svc:Tr Fr_UsernameHint}"
                                                Margin="12,4"
                                                BackgroundColor="Transparent"/>
                                     </Border>
@@ -293,7 +303,7 @@
                                             StrokeShape="RoundRectangle 16"
                                             BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}">
                                         <Entry x:Name="NewFriendDisplayNameEntry"
-                                               Placeholder="Display name (optional)"
+                                               Placeholder="{svc:Tr Fr_DisplayNameHint}"
                                                Margin="12,4"
                                                BackgroundColor="Transparent"/>
                                     </Border>
@@ -301,20 +311,20 @@
                                             StrokeShape="RoundRectangle 16"
                                             BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}">
                                         <Editor x:Name="NewFriendMessageEditor"
-                                                Placeholder="Own message for this friend (optional — blank uses the shared message)"
+                                                Placeholder="{svc:Tr Fr_OwnMessageFriend}"
                                                 HeightRequest="72"
                                                 Margin="12,8"
                                                 BackgroundColor="Transparent"/>
                                     </Border>
                                     <Grid ColumnDefinitions="*, *" ColumnSpacing="8">
-                                        <Button Text="Cancel"
+                                        <Button Text="{svc:Tr Common_Cancel}"
                                                 Style="{StaticResource TextButton}"
                                                 BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray800}}"
                                                 TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
                                                 CornerRadius="14" HeightRequest="40"
                                                 Clicked="OnCancelAddFriend"/>
                                         <Button Grid.Column="1"
-                                                Text="Save"
+                                                Text="{svc:Tr Common_Save}"
                                                 BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                                                 TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
                                                 CornerRadius="14" HeightRequest="40"
@@ -325,32 +335,46 @@
                                 <!--
                                     Reading the friend list straight out of the TikTok inbox.
 
-                                    Given its own card with a title, a line explaining what it saves the
-                                    user, and a filled button, rather than being one more text link in the
-                                    row above. That row already holds Import, Export, Add and Clear, which
-                                    all look identical at a glance, and a first-time user has no way to know
-                                    that one of them spares them typing every username by hand. A link that
-                                    has to be discovered is not a feature.
+                                    This began as a pink-tinted card with a filled pink button, which
+                                    turned out to be too loud: it competed with the friend list it sits
+                                    above, and it spent the same saturated accent the rows use for their
+                                    own state. The emphasis now comes from the wording - a title and a
+                                    one-line explanation - rather than from colour, and the surface is
+                                    the same neutral one the rows use.
+
+                                    It is deliberately still its own row rather than one more link in the
+                                    toolbar above: that toolbar holds Import, Export, Add and Clear, which
+                                    all look alike at a glance, and a first-time user has no way to know
+                                    that one of them spares them typing every username by hand.
                                 -->
-                                <Border StrokeThickness="0"
+                                <Border x:Name="ImportChatsCard"
+                                        StrokeThickness="1"
                                         StrokeShape="RoundRectangle 16"
                                         Padding="16,14"
-                                        BackgroundColor="{AppThemeBinding Light={StaticResource PrimarySubtle}, Dark={StaticResource PrimarySubtleDark}}">
+                                        Stroke="{AppThemeBinding Light={StaticResource ListItemBorderLight}, Dark={StaticResource ListItemBorderDark}}"
+                                        BackgroundColor="{AppThemeBinding Light={StaticResource ListItemLight}, Dark={StaticResource ListItemDark}}">
                                     <Grid ColumnDefinitions="*, Auto" ColumnSpacing="12">
                                         <VerticalStackLayout Grid.Column="0" Spacing="3" VerticalOptions="Center">
-                                            <Label Text="Import friends from TikTok chats"
+                                            <Label Text="{svc:Tr Fr_ImportChatsTitle}"
                                                    Style="{StaticResource SectionLabel}"/>
-                                            <Label Text="Adds everyone you already chat with, in one go — no usernames to type."
+                                            <Label Text="{svc:Tr Fr_ImportChatsBody}"
                                                    Style="{StaticResource DataLabel}"
                                                    LineBreakMode="WordWrap"/>
                                         </VerticalStackLayout>
 
+                                        <!--
+                                            Outlined rather than filled: the accent stays in the label, so the
+                                            button is clearly actionable without being a solid pink block.
+                                        -->
                                         <Button Grid.Column="1"
-                                                Text="Import chats"
-                                                BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
-                                                TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
-                                                FontFamily="InterSemiBold"
-                                                CornerRadius="14"
+                                                Text="{svc:Tr Fr_ImportChatsButton}"
+                                                BackgroundColor="Transparent"
+                                                TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
+                                                BorderColor="{AppThemeBinding Light={StaticResource BorderColorLight}, Dark={StaticResource BorderColorDark}}"
+                                                BorderWidth="1"
+                                                FontFamily="InterMedium"
+                                                FontSize="14"
+                                                CornerRadius="12"
                                                 HeightRequest="40"
                                                 Padding="14,0"
                                                 VerticalOptions="Center"
@@ -364,7 +388,7 @@
                                         import card by name, so the fastest one is not the one they never find.
                                     -->
                                     <Label x:Name="NoFriendsLabel"
-                                           Text="No friends yet. Add one, or import everyone from your TikTok chats above."
+                                           Text="{svc:Tr Fr_NoFriends}"
                                            Style="{StaticResource DataLabel}"
                                            HorizontalOptions="Center"
                                            LineBreakMode="WordWrap"
@@ -380,17 +404,26 @@
                             <VerticalStackLayout Spacing="12">
 
                                 <Grid x:Name="GroupActionButtonsGrid" ColumnDefinitions="*, Auto, Auto, Auto" ColumnSpacing="10">
-                                    <Label Text="Group Chats"
+                                    <Label Text="{svc:Tr Fr_GroupChats}"
                                            Style="{StaticResource SectionLabel}" VerticalOptions="Center"/>
                                     <Button Grid.Column="1"
-                                            Text="Add"
+                                            Text="{svc:Tr Fr_Add}"
                                             Style="{StaticResource TextButton}"
                                             Clicked="OnAddGroupClicked"/>
                                     <Button Grid.Column="2"
-                                            Text="Clear"
+                                            Text="{svc:Tr Fr_Clear}"
                                             Style="{StaticResource TextButton}"
                                             TextColor="{AppThemeBinding Light={StaticResource DeleteColor}, Dark={StaticResource DeleteColor}}"
                                             Clicked="OnDeleteAllGroupsClicked"/>
+                                    <!-- Arranging groups past other groups. A second Reorder button rather than
+                                         one shared with the Friends toolbar, because the arrangement only moves an
+                                         entry past others of its own kind - so in this mode it moves groups, and
+                                         in the Friends mode it moves friends. Hidden while arranging. -->
+                                    <Button x:Name="GroupReorderToggleButton"
+                                            Grid.Column="3"
+                                            Text="{svc:Tr Fr_Reorder}"
+                                            Style="{StaticResource TextButton}"
+                                            Clicked="OnToggleReorderModeClicked"/>
                                 </Grid>
 
                                 <Grid x:Name="GroupBulkRow" IsVisible="False"
@@ -400,7 +433,7 @@
                                             StrokeShape="RoundRectangle 16"
                                             BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}">
                                         <Entry x:Name="SearchGroupEntry"
-                                               Placeholder="Search groups..."
+                                               Placeholder="{svc:Tr Fr_SearchGroups}"
                                                Margin="12,0"
                                                VerticalOptions="Center"
                                                ClearButtonVisibility="WhileEditing"
@@ -408,12 +441,12 @@
                                                TextChanged="OnSearchGroupTextChanged"/>
                                     </Border>
                                     <Button Grid.Column="1"
-                                            Text="Enable All"
+                                            Text="{svc:Tr Fr_EnableAll}"
                                             Style="{StaticResource TextButton}"
                                             FontSize="12" Padding="8,0" HeightRequest="40"
                                             Clicked="OnEnableAllGroupsClicked"/>
                                     <Button Grid.Column="2"
-                                            Text="Disable All"
+                                            Text="{svc:Tr Fr_DisableAll}"
                                             Style="{StaticResource TextButton}"
                                             FontSize="12" Padding="8,0" HeightRequest="40"
                                             TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"
@@ -425,7 +458,7 @@
                                             StrokeShape="RoundRectangle 16"
                                             BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}">
                                         <Entry x:Name="NewGroupNameEntry"
-                                               Placeholder="Group chat name (as it appears in TikTok)"
+                                               Placeholder="{svc:Tr Fr_GroupNameHint}"
                                                Margin="12,4"
                                                BackgroundColor="Transparent"/>
                                     </Border>
@@ -433,7 +466,7 @@
                                             StrokeShape="RoundRectangle 16"
                                             BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}">
                                         <Entry x:Name="NewGroupDisplayNameEntry"
-                                               Placeholder="Display name (optional)"
+                                               Placeholder="{svc:Tr Fr_DisplayNameHint}"
                                                Margin="12,4"
                                                BackgroundColor="Transparent"/>
                                     </Border>
@@ -441,20 +474,20 @@
                                             StrokeShape="RoundRectangle 16"
                                             BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}">
                                         <Editor x:Name="NewGroupMessageEditor"
-                                                Placeholder="Own message for this group (optional — blank uses the shared message)"
+                                                Placeholder="{svc:Tr Fr_OwnMessageGroup}"
                                                 HeightRequest="72"
                                                 Margin="12,8"
                                                 BackgroundColor="Transparent"/>
                                     </Border>
                                     <Grid ColumnDefinitions="*, *" ColumnSpacing="8">
-                                        <Button Text="Cancel"
+                                        <Button Text="{svc:Tr Common_Cancel}"
                                                 Style="{StaticResource TextButton}"
                                                 BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray800}}"
                                                 TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
                                                 CornerRadius="14" HeightRequest="40"
                                                 Clicked="OnCancelAddGroup"/>
                                         <Button Grid.Column="1"
-                                                Text="Save"
+                                                Text="{svc:Tr Common_Save}"
                                                 BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                                                 TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
                                                 CornerRadius="14" HeightRequest="40"
@@ -469,7 +502,7 @@
                                         where someone looking for them would otherwise only see "Add".
                                     -->
                                     <Label x:Name="NoGroupsLabel"
-                                           Text="No groups yet. Add one, or import your chats from the Friends tab."
+                                           Text="{svc:Tr Fr_NoGroups}"
                                            Style="{StaticResource DataLabel}"
                                            HorizontalOptions="Center"
                                            LineBreakMode="WordWrap"
@@ -484,17 +517,17 @@
                             <VerticalStackLayout HorizontalOptions="Center" Spacing="2">
                                 <Label x:Name="TotalFriendsLabel" Text="0"
                                        Style="{StaticResource ValueLabel}" HorizontalTextAlignment="Center"/>
-                                <Label Text="Total" Style="{StaticResource DataLabel}" HorizontalTextAlignment="Center"/>
+                                <Label Text="{svc:Tr Fr_Total}" Style="{StaticResource DataLabel}" HorizontalTextAlignment="Center"/>
                             </VerticalStackLayout>
                             <VerticalStackLayout Grid.Column="1" HorizontalOptions="Center" Spacing="2">
                                 <Label x:Name="EnabledFriendsLabel" Text="0"
                                        Style="{StaticResource ValueLabel}" HorizontalTextAlignment="Center"/>
-                                <Label Text="Enabled" Style="{StaticResource DataLabel}" HorizontalTextAlignment="Center"/>
+                                <Label Text="{svc:Tr Fr_Enabled}" Style="{StaticResource DataLabel}" HorizontalTextAlignment="Center"/>
                             </VerticalStackLayout>
                             <VerticalStackLayout Grid.Column="2" HorizontalOptions="Center" Spacing="2">
                                 <Label x:Name="SentTodayLabel" Text="0"
                                        Style="{StaticResource ValueLabel}" HorizontalTextAlignment="Center"/>
-                                <Label Text="Sent Today" Style="{StaticResource DataLabel}" HorizontalTextAlignment="Center"/>
+                                <Label Text="{svc:Tr Fr_SentToday}" Style="{StaticResource DataLabel}" HorizontalTextAlignment="Center"/>
                             </VerticalStackLayout>
                         </Grid>
                     </Border>

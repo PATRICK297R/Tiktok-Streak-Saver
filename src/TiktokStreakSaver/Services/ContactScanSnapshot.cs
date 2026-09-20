@@ -105,20 +105,24 @@ public sealed class ContactScanSnapshot
     public static string ProgressText(ContactScanSnapshot? snapshot)
     {
         if (snapshot is null)
-            return "Reading your chats…";
+            return AppStrings.T("Scan_ReadingChats");
 
         return snapshot.Phase switch
         {
-            ContactScanPhase.Starting => "Opening your inbox…",
+            ContactScanPhase.Starting => AppStrings.T("Imp_Opening"),
             ContactScanPhase.Running => snapshot.Items.Count > 0
-                ? $"Reading your chats… {snapshot.Items.Count} found, {snapshot.Attempts} checked"
+                ? string.Format(AppStrings.T("Scan_ReadingFound"), snapshot.Items.Count, snapshot.Attempts)
                 : snapshot.Attempts > 0
-                    ? $"Reading your chats… opening chat {snapshot.Attempts}"
-                    : "Reading your chats…",
-            ContactScanPhase.Finished => $"Read {snapshot.Items.Count} {(snapshot.Items.Count == 1 ? "conversation" : "conversations")}.",
-            ContactScanPhase.Cancelled => $"Stopped after {snapshot.Items.Count} {(snapshot.Items.Count == 1 ? "conversation" : "conversations")}.",
-            ContactScanPhase.Failed => snapshot.Message.Length > 0 ? snapshot.Message : "The scan could not run.",
-            _ => "Reading your chats…"
+                    ? string.Format(AppStrings.T("Scan_ReadingOpening"), snapshot.Attempts)
+                    : AppStrings.T("Scan_ReadingChats"),
+            ContactScanPhase.Finished => snapshot.Items.Count == 1
+                ? string.Format(AppStrings.T("Scan_ReadOneConversation"), snapshot.Items.Count)
+                : string.Format(AppStrings.T("Scan_ReadConversations"), snapshot.Items.Count),
+            ContactScanPhase.Cancelled => snapshot.Items.Count == 1
+                ? string.Format(AppStrings.T("Scan_StoppedAfterOne"), snapshot.Items.Count)
+                : string.Format(AppStrings.T("Scan_StoppedAfterMany"), snapshot.Items.Count),
+            ContactScanPhase.Failed => snapshot.Message.Length > 0 ? snapshot.Message : AppStrings.T("Scan_CouldNotRun"),
+            _ => AppStrings.T("Scan_ReadingChats")
         };
     }
 
@@ -133,19 +137,23 @@ public sealed class ContactScanSnapshot
     public static string SummaryText(ContactScanSnapshot? snapshot)
     {
         if (snapshot is null)
-            return "Nothing was read.";
+            return AppStrings.T("Scan_NothingWasRead");
 
         return snapshot.Phase switch
         {
             ContactScanPhase.Finished => snapshot.Items.Count > 0
-                ? $"Read {snapshot.Items.Count} {(snapshot.Items.Count == 1 ? "chat" : "chats")} — tap to review and add them."
-                : "No conversations were found in your inbox.",
+                ? snapshot.Items.Count == 1
+                    ? string.Format(AppStrings.T("Scan_SummaryOneChat"), snapshot.Items.Count)
+                    : string.Format(AppStrings.T("Scan_SummaryChats"), snapshot.Items.Count)
+                : AppStrings.T("Scan_NoConversationsFound"),
             ContactScanPhase.Cancelled => snapshot.Items.Count > 0
-                ? $"Stopped. {snapshot.Items.Count} {(snapshot.Items.Count == 1 ? "chat was" : "chats were")} read — tap to review them."
-                : "Stopped before anything could be read.",
+                ? snapshot.Items.Count == 1
+                    ? string.Format(AppStrings.T("Scan_SummaryStoppedOne"), snapshot.Items.Count)
+                    : string.Format(AppStrings.T("Scan_SummaryStoppedMany"), snapshot.Items.Count)
+                : AppStrings.T("Scan_StoppedBeforeRead"),
             ContactScanPhase.Failed => snapshot.Message.Length > 0
-                ? $"Could not read your chats: {snapshot.Message}"
-                : "Could not read your chats.",
+                ? string.Format(AppStrings.T("Scan_CouldNotReadReason"), snapshot.Message)
+                : AppStrings.T("Scan_CouldNotRead"),
             _ => ProgressText(snapshot)
         };
     }

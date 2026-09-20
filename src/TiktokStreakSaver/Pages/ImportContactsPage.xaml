@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:svc="clr-namespace:TiktokStreakSaver.Services"
              x:Class="TiktokStreakSaver.Pages.ImportContactsPage"
-             Title="Import from chats"
+             Title="{svc:Tr Imp_Title}"
              Shell.NavBarIsVisible="False"
              Shell.TabBarIsVisible="False"
              NavigationPage.HasNavigationBar="False"
@@ -16,10 +17,10 @@
         -->
         <VerticalStackLayout Grid.Row="0" Padding="20,18,20,8" Spacing="3">
             <VerticalStackLayout Spacing="2">
-                <Label Text="Import from chats"
+                <Label Text="{svc:Tr Imp_Title}"
                        Style="{StaticResource PageTitleLabel}"
                        HorizontalOptions="Start"/>
-                <Label Text="Adds the people you already chat with, in one go. Nothing is sent."
+                <Label Text="{svc:Tr Imp_Body}"
                        FontFamily="InterRegular"
                        FontSize="13"
                        TextColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray400}}"
@@ -54,7 +55,7 @@
                                                    VerticalOptions="Start"/>
                                 <VerticalStackLayout Grid.Column="1" Spacing="3" VerticalOptions="Center">
                                     <Label x:Name="ScanStatusLabel"
-                                           Text="Opening your inbox…"
+                                           Text="{svc:Tr Imp_Opening}"
                                            Style="{StaticResource ValueLabel}"
                                            LineBreakMode="WordWrap"/>
                                     <Label x:Name="ScanDetailLabel"
@@ -69,21 +70,21 @@
                                 <Grid ColumnDefinitions="18,*" ColumnSpacing="8">
                                     <Label Text="1" Style="{StaticResource DataLabel}" HorizontalTextAlignment="Center"/>
                                     <Label Grid.Column="1"
-                                           Text="Opens your TikTok inbox"
+                                           Text="{svc:Tr Imp_Step1}"
                                            Style="{StaticResource DataLabel}"
                                            LineBreakMode="WordWrap"/>
                                 </Grid>
                                 <Grid ColumnDefinitions="18,*" ColumnSpacing="8">
                                     <Label Text="2" Style="{StaticResource DataLabel}" HorizontalTextAlignment="Center"/>
                                     <Label Grid.Column="1"
-                                           Text="Opens each chat in turn to read the real name"
+                                           Text="{svc:Tr Imp_Step2}"
                                            Style="{StaticResource DataLabel}"
                                            LineBreakMode="WordWrap"/>
                                 </Grid>
                                 <Grid ColumnDefinitions="18,*" ColumnSpacing="8">
                                     <Label Text="3" Style="{StaticResource DataLabel}" HorizontalTextAlignment="Center"/>
                                     <Label Grid.Column="1"
-                                           Text="Shows you the list to pick from before anything is saved"
+                                           Text="{svc:Tr Imp_Step3}"
                                            Style="{StaticResource DataLabel}"
                                            LineBreakMode="WordWrap"/>
                                 </Grid>
@@ -92,6 +93,24 @@
                         </VerticalStackLayout>
                     </Border>
 
+                    <!--
+                        Chats appear here the moment each one has been read, rather than all of them
+                        arriving at the end. A scan of a long inbox takes a while, and a progress line
+                        that only counts upwards gives no sign that the work is producing anything.
+
+                        Nothing here can be touched. The rows are drawn from the snapshot the service
+                        publishes, which is still being appended to, so a tick or an edit made now
+                        would be overwritten by the next poll. Editing opens with the review list once
+                        the scan has stopped.
+                    -->
+                    <VerticalStackLayout x:Name="ScanPreviewSection" Spacing="8" IsVisible="False">
+                        <Label Text="{svc:Tr Imp_ReadSoFar}" Style="{StaticResource SectionLabel}"/>
+                        <Label Text="{svc:Tr Imp_ReadSoFarBody}"
+                               Style="{StaticResource DataLabel}"
+                               LineBreakMode="WordWrap"/>
+                        <VerticalStackLayout x:Name="ScanPreviewList" Spacing="6"/>
+                    </VerticalStackLayout>
+
                 </VerticalStackLayout>
             </ScrollView>
 
@@ -99,17 +118,17 @@
             <VerticalStackLayout Grid.Row="1" Padding="20,0,20,20" Spacing="10">
                 <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                     <Button x:Name="CloseScanButton"
-                            Text="Run in background"
+                            Text="{svc:Tr Imp_RunInBackground}"
                             Style="{StaticResource TextButton}"
                             Clicked="OnCloseScanClicked"/>
                     <Button x:Name="StopScanButton"
                             Grid.Column="1"
-                            Text="Stop"
+                            Text="{svc:Tr Common_Stop}"
                             Style="{StaticResource TextButton}"
                             Clicked="OnStopScanClicked"/>
                 </Grid>
 
-                <Label Text="You can close the app while this runs — the scan keeps going in the background and tells you when it is done."
+                <Label Text="{svc:Tr Imp_BackgroundNote}"
                        Style="{StaticResource DataLabel}"
                        HorizontalTextAlignment="Center"
                        LineBreakMode="WordWrap"/>
@@ -148,15 +167,15 @@
                     and failing silently on every run.
                 -->
                 <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="4">
-                    <Button Text="Select all"
+                    <Button Text="{svc:Tr Imp_SelectAll}"
                             Style="{StaticResource TextButton}"
                             Clicked="OnSelectAllClicked"/>
                     <Button Grid.Column="1"
-                            Text="Select none"
+                            Text="{svc:Tr Imp_SelectNone}"
                             Style="{StaticResource TextButton}"
                             Clicked="OnSelectNoneClicked"/>
                     <Button Grid.Column="2"
-                            Text="Scan again"
+                            Text="{svc:Tr Imp_ScanAgain}"
                             Style="{StaticResource TextButton}"
                             HorizontalOptions="End"
                             Clicked="OnScanAgainClicked"/>
@@ -174,20 +193,20 @@
                     <VerticalStackLayout x:Name="ResultsList" Spacing="6"/>
                 </Border>
 
-                <Label Text="Tick the ones to add. Use Edit on a row to change its name, its username, or whether it is a person or a group."
+                <Label Text="{svc:Tr Imp_TickHint}"
                        Style="{StaticResource DataLabel}"
                        LineBreakMode="WordWrap"/>
 
                 <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                     <Button x:Name="AddContactsButton"
-                            Text="Add"
+                            Text="{svc:Tr Fr_Add}"
                             BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                             TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
                             CornerRadius="14"
                             HeightRequest="44"
                             Clicked="OnAddContactsClicked"/>
                     <Button Grid.Column="1"
-                            Text="Discard"
+                            Text="{svc:Tr Imp_Discard}"
                             BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray800}}"
                             TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
                             CornerRadius="14"
@@ -218,7 +237,7 @@
                 </VerticalStackLayout>
 
                 <Button x:Name="RetryScanButton"
-                        Text="Try again"
+                        Text="{svc:Tr Common_Retry}"
                         BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                         TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
                         CornerRadius="14"
@@ -230,7 +249,7 @@
                     here, because the import is what the user was doing.
                 -->
                 <Button x:Name="SignInButton"
-                        Text="Sign in to TikTok"
+                        Text="{svc:Tr Imp_SignIn}"
                         IsVisible="False"
                         BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray800}}"
                         TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
@@ -238,7 +257,7 @@
                         HeightRequest="44"
                         Clicked="OnSignInClicked"/>
 
-                <Button Text="Close"
+                <Button Text="{svc:Tr Common_Close}"
                         Style="{StaticResource TextButton}"
                         HorizontalOptions="Center"
                         Clicked="OnCancelClicked"/>

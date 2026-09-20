@@ -171,8 +171,8 @@ public partial class LoginPage : ContentPage
             if (!_sessionService.TrySetSessionValid(true, out var persistError))
             {
                 _completionInProgress = false;
-                await DisplayAlert("Could Not Save Session",
-                    persistError ?? "Login succeeded but session state did not persist on this device.", "OK");
+                await DisplayAlert(Localization.T("Login_CouldNotSaveSession"),
+                    persistError ?? Localization.T("Login_SessionNotPersisted"), Localization.T("Common_OK"));
                 return;
             }
 
@@ -200,12 +200,12 @@ public partial class LoginPage : ContentPage
             {
                 var body = justEnabled
 #if IOS
-                    ? "You're logged in to TikTok! Set up a daily Shortcut (see Profile) to run streaks automatically."
+                    ? Localization.T("Login_LoggedInIos")
 #else
-                    ? "You're logged in to TikTok! Background automation has been enabled — your streaks will run on the schedule set in Profile."
+                    ? Localization.T("Login_LoggedInAndroid")
 #endif
-                    : "You're logged in to TikTok! The app will use this session for streak messaging.";
-                await DisplayAlert("Logged In", body, "OK");
+                    : Localization.T("Login_LoggedInSession");
+                await DisplayAlert(Localization.T("Login_LoggedInTitle"), body, Localization.T("Common_OK"));
             }
 
             if (Navigation.NavigationStack.Count > 1)
@@ -224,8 +224,8 @@ public partial class LoginPage : ContentPage
         else
         {
             _sessionService.TrySetSessionValid(false, out _);
-            await DisplayAlert("Not Logged In",
-                "Please login to TikTok first before continuing.", "OK");
+            await DisplayAlert(Localization.T("Login_NotLoggedInTitle"),
+                Localization.T("Login_PleaseLoginFirst"), Localization.T("Common_OK"));
             _completionInProgress = false;
         }
     }

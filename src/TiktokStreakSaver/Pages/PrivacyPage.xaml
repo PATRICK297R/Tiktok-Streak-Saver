@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:svc="clr-namespace:TiktokStreakSaver.Services"
              x:Class="TiktokStreakSaver.Pages.PrivacyPage"
-             Title="Privacy Policy"
+             Title="{svc:Tr Prof_PrivacyPolicy}"
              Shell.NavBarIsVisible="False"
              Shell.TabBarIsVisible="False"
              NavigationPage.HasNavigationBar="False"
@@ -14,24 +15,24 @@
             <VerticalStackLayout Padding="20" Spacing="16">
 
                 <VerticalStackLayout Spacing="2" Margin="0,8,0,0">
-                    <Label Text="Privacy Policy"
+                    <Label Text="{svc:Tr Prof_PrivacyPolicy}"
                            Style="{StaticResource PageTitleLabel}"
                            HorizontalOptions="Start"/>
-                    <Label Text="What this app does and doesn't do with your data"
+                    <Label Text="{svc:Tr Pv_WhatItDoes}"
                            FontFamily="InterRegular"
                            FontSize="13"
                            TextColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray400}}"
                            HorizontalOptions="Start"/>
                     <Label x:Name="EffectiveDateLabel"
-                           Text="Effective date: June 9, 2026"
+                           Text="{svc:Tr Pv_EffectiveDate}"
                            Style="{StaticResource ControlSubLabel}"
                            Margin="0,4,0,0"/>
                 </VerticalStackLayout>
 
                 <Border Style="{StaticResource SectionCard}">
                     <VerticalStackLayout Spacing="10">
-                        <Label Text="TL;DR" Style="{StaticResource SectionLabel}"/>
-                        <Label Text="The app does not collect, transmit, sell, or share any personal data about you. There are no analytics, no advertising, no third-party tracking SDKs, and no developer-owned servers receiving anything about you or your usage. Everything you configure stays on your device."
+                        <Label Text="{svc:Tr Pv_Tldr}" Style="{StaticResource SectionLabel}"/>
+                        <Label Text="{svc:Tr Pv_TldrBody}"
                                Style="{StaticResource ValueLabel}"
                                LineBreakMode="WordWrap"/>
                     </VerticalStackLayout>
@@ -39,25 +40,25 @@
 
                 <Border Style="{StaticResource SectionCard}">
                     <VerticalStackLayout Spacing="10">
-                        <Label Text="What the app stores on your device" Style="{StaticResource SectionLabel}"/>
-                        <Label Text="The following information is saved on your device using Android's standard preferences and the system WebView cookie store. It never leaves your device unless you back it up or export it yourself:"
+                        <Label Text="{svc:Tr Pv_Stored}" Style="{StaticResource SectionLabel}"/>
+                        <Label Text="{svc:Tr Pv_StoredBody}"
                                Style="{StaticResource ValueLabel}"
                                LineBreakMode="WordWrap"/>
                         <VerticalStackLayout Spacing="6">
-                            <Label Text="• TikTok session data: cookies and the browser user-agent string captured at login, so background runs can send streak messages without re-logging in."
+                            <Label Text="{svc:Tr Pv_StoredBullet1}"
                                    Style="{StaticResource ValueLabel}" LineBreakMode="WordWrap"/>
-                            <Label Text="• The friends and groups list you add: TikTok usernames, optional display names, group names, enable/disable state, and counters (last-sent timestamp, success/failure counts)."
+                            <Label Text="{svc:Tr Pv_StoredBullet2}"
                                    Style="{StaticResource ValueLabel}" LineBreakMode="WordWrap"/>
-                            <Label Text="• Your custom message text and the randomized-messages toggle."
+                            <Label Text="{svc:Tr Pv_StoredBullet3}"
                                    Style="{StaticResource ValueLabel}" LineBreakMode="WordWrap"/>
-                            <Label Text="• Scheduling preferences: interval or fixed daily time, retry counter for the day, the 'Send streaks if battery is running low' toggle, and similar app settings."
+                            <Label Text="{svc:Tr Pv_StoredBullet4}"
                                    Style="{StaticResource ValueLabel}" LineBreakMode="WordWrap"/>
-                            <Label Text="• Run history: per-run results (success/failure per friend), capped to the most recent 50 runs."
+                            <Label Text="{svc:Tr Pv_StoredBullet5}"
                                    Style="{StaticResource ValueLabel}" LineBreakMode="WordWrap"/>
-                            <Label Text="• Optional display name and profile photo you set in the app. The photo, if any, is stored as a file in the app's private storage."
+                            <Label Text="{svc:Tr Pv_StoredBullet6}"
                                    Style="{StaticResource ValueLabel}" LineBreakMode="WordWrap"/>
                         </VerticalStackLayout>
-                        <Label Text="You can erase all of this at any time by tapping 'Logout / Clear Session' on the Profile page, or by going to Android Settings → Apps → Streak Saver → Storage → Clear data, or by uninstalling the app."
+                        <Label Text="{svc:Tr Pv_Erase}"
                                Style="{StaticResource ValueLabel}"
                                LineBreakMode="WordWrap"
                                Margin="0,4,0,0"/>
@@ -66,27 +67,27 @@
 
                 <Border Style="{StaticResource SectionCard}">
                     <VerticalStackLayout Spacing="10">
-                        <Label Text="Network connections" Style="{StaticResource SectionLabel}"/>
-                        <Label Text="The app communicates directly with the following services from your device. The developer does not operate any intermediary server and does not see this traffic:"
+                        <Label Text="{svc:Tr Pv_Network}" Style="{StaticResource SectionLabel}"/>
+                        <Label Text="{svc:Tr Pv_NetworkBody}"
                                Style="{StaticResource ValueLabel}"
                                LineBreakMode="WordWrap"/>
                         <VerticalStackLayout Spacing="10">
                             <VerticalStackLayout Spacing="2">
-                                <Label Text="1. TikTok (tiktok.com and subdomains)"
+                                <Label Text="{svc:Tr Pv_NetworkTiktokTitle}"
                                        Style="{StaticResource ControlTitleLabel}"/>
-                                <Label Text="When you log in and whenever a scheduled run starts, the app loads TikTok in an Android WebView and uses your own cookies to open chat threads and send the message you configured. TikTok's own privacy policy applies to whatever happens inside that WebView."
+                                <Label Text="{svc:Tr Pv_WhatItDoesBody}"
                                        Style="{StaticResource ValueLabel}"
                                        LineBreakMode="WordWrap"/>
                             </VerticalStackLayout>
                             <VerticalStackLayout Spacing="2">
-                                <Label Text="2. GitHub (api.github.com, github.com, and release-asset URLs)"
+                                <Label Text="{svc:Tr Pv_NetworkGithubTitle}"
                                        Style="{StaticResource ControlTitleLabel}"/>
-                                <Label Text="For the in-app 'Check for updates' feature. The app calls the public GitHub Releases API for repo Jon2G/TiktokStreakSaver and downloads APK files from release assets. The only header sent is 'User-Agent: TiktokStreakSaver/1.0'. No account, device, or personal identifiers are sent."
+                                <Label Text="{svc:Tr Pv_NetworkGithub}"
                                        Style="{StaticResource ValueLabel}"
                                        LineBreakMode="WordWrap"/>
                             </VerticalStackLayout>
                         </VerticalStackLayout>
-                        <Label Text="That is the entire set of outbound connections. There are no analytics endpoints, no crash-reporting endpoints, no advertising endpoints."
+                        <Label Text="{svc:Tr Pv_NetworkEnd}"
                                Style="{StaticResource ValueLabel}"
                                LineBreakMode="WordWrap"
                                Margin="0,4,0,0"/>
@@ -95,45 +96,45 @@
 
                 <Border Style="{StaticResource SectionCard}">
                     <VerticalStackLayout Spacing="10">
-                        <Label Text="Permissions and why they are requested" Style="{StaticResource SectionLabel}"/>
+                        <Label Text="{svc:Tr Pv_Permissions}" Style="{StaticResource SectionLabel}"/>
                         <VerticalStackLayout Spacing="10">
                             <VerticalStackLayout Spacing="2">
                                 <Label Text="INTERNET, ACCESS_NETWORK_STATE" Style="{StaticResource ControlTitleLabel}"/>
-                                <Label Text="Connect to TikTok to send streaks and to GitHub for update checks; detect Wi-Fi / cellular availability before starting a run."
+                                <Label Text="{svc:Tr Pv_NetworkTiktok}"
                                        Style="{StaticResource ValueLabel}" LineBreakMode="WordWrap"/>
                             </VerticalStackLayout>
                             <VerticalStackLayout Spacing="2">
                                 <Label Text="FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC, WAKE_LOCK" Style="{StaticResource ControlTitleLabel}"/>
-                                <Label Text="Keep the streak-sender service alive while a run is in progress."
+                                <Label Text="{svc:Tr Pv_PermForegroundWhy}"
                                        Style="{StaticResource ValueLabel}" LineBreakMode="WordWrap"/>
                             </VerticalStackLayout>
                             <VerticalStackLayout Spacing="2">
                                 <Label Text="SCHEDULE_EXACT_ALARM, USE_EXACT_ALARM" Style="{StaticResource ControlTitleLabel}"/>
-                                <Label Text="Trigger the next streak run at the configured time."
+                                <Label Text="{svc:Tr Pv_PermAlarmWhy}"
                                        Style="{StaticResource ValueLabel}" LineBreakMode="WordWrap"/>
                             </VerticalStackLayout>
                             <VerticalStackLayout Spacing="2">
                                 <Label Text="RECEIVE_BOOT_COMPLETED" Style="{StaticResource ControlTitleLabel}"/>
-                                <Label Text="Reschedule the alarm after the device restarts."
+                                <Label Text="{svc:Tr Pv_PermBootWhy}"
                                        Style="{StaticResource ValueLabel}" LineBreakMode="WordWrap"/>
                             </VerticalStackLayout>
                             <VerticalStackLayout Spacing="2">
                                 <Label Text="REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" Style="{StaticResource ControlTitleLabel}"/>
-                                <Label Text="Ask Android to keep the app reliable in the background."
+                                <Label Text="{svc:Tr Pv_PermBatteryWhy}"
                                        Style="{StaticResource ValueLabel}" LineBreakMode="WordWrap"/>
                             </VerticalStackLayout>
                             <VerticalStackLayout Spacing="2">
                                 <Label Text="POST_NOTIFICATIONS" Style="{StaticResource ControlTitleLabel}"/>
-                                <Label Text="Show progress and completion notifications."
+                                <Label Text="{svc:Tr Pv_PermNotificationsWhy}"
                                        Style="{StaticResource ValueLabel}" LineBreakMode="WordWrap"/>
                             </VerticalStackLayout>
                             <VerticalStackLayout Spacing="2">
                                 <Label Text="REQUEST_INSTALL_PACKAGES" Style="{StaticResource ControlTitleLabel}"/>
-                                <Label Text="Install updated APKs downloaded from GitHub Releases."
+                                <Label Text="{svc:Tr Pv_PermInstallWhy}"
                                        Style="{StaticResource ValueLabel}" LineBreakMode="WordWrap"/>
                             </VerticalStackLayout>
                         </VerticalStackLayout>
-                        <Label Text="The app uses these permissions only for the purposes listed above."
+                        <Label Text="{svc:Tr Pv_PermEnd}"
                                Style="{StaticResource ValueLabel}"
                                LineBreakMode="WordWrap"
                                Margin="0,4,0,0"/>
@@ -142,8 +143,8 @@
 
                 <Border Style="{StaticResource SectionCard}">
                     <VerticalStackLayout Spacing="10">
-                        <Label Text="Minimum Age" Style="{StaticResource SectionLabel}"/>
-                        <Label Text="The app is not intended for users below the age of 13 or your region's age requirements for TikTok."
+                        <Label Text="{svc:Tr Pv_MinimumAge}" Style="{StaticResource SectionLabel}"/>
+                        <Label Text="{svc:Tr Pv_MinimumAgeBody}"
                                Style="{StaticResource ValueLabel}"
                                LineBreakMode="WordWrap"/>
                     </VerticalStackLayout>
@@ -151,8 +152,8 @@
 
                 <Border Style="{StaticResource SectionCard}">
                     <VerticalStackLayout Spacing="10">
-                        <Label Text="Third parties" Style="{StaticResource SectionLabel}"/>
-                        <Label Text="The app does not embed any third-party advertising, analytics, attribution, marketing, or social SDKs. The only services it talks to are TikTok (your own account) and GitHub (public release metadata), each with their own privacy practices, which apply to your direct interaction with them."
+                        <Label Text="{svc:Tr Pv_ThirdParties}" Style="{StaticResource SectionLabel}"/>
+                        <Label Text="{svc:Tr Pv_ThirdPartiesBody}"
                                Style="{StaticResource ValueLabel}"
                                LineBreakMode="WordWrap"/>
                     </VerticalStackLayout>
@@ -160,8 +161,8 @@
 
                 <Border Style="{StaticResource SectionCard}">
                     <VerticalStackLayout Spacing="10">
-                        <Label Text="Security" Style="{StaticResource SectionLabel}"/>
-                        <Label Text="Local data is kept inside the app's private storage, protected by Android's standard app-sandboxing model. Because nothing is transmitted to a developer-controlled server, there is no remote breach risk on the developer's side."
+                        <Label Text="{svc:Tr Pv_Security}" Style="{StaticResource SectionLabel}"/>
+                        <Label Text="{svc:Tr Pv_SecurityBody}"
                                Style="{StaticResource ValueLabel}"
                                LineBreakMode="WordWrap"/>
                     </VerticalStackLayout>
@@ -169,8 +170,8 @@
 
                 <Border Style="{StaticResource SectionCard}">
                     <VerticalStackLayout Spacing="10">
-                        <Label Text="Changes" Style="{StaticResource SectionLabel}"/>
-                        <Label Text="Updates to this policy are committed to PRIVACY.md in the repository and reflected in the in-app Privacy screen on the next app update. The Effective date above changes whenever the text changes."
+                        <Label Text="{svc:Tr Pv_Changes}" Style="{StaticResource SectionLabel}"/>
+                        <Label Text="{svc:Tr Pv_ChangesBody}"
                                Style="{StaticResource ValueLabel}"
                                LineBreakMode="WordWrap"/>
                     </VerticalStackLayout>
@@ -178,12 +179,12 @@
 
                 <Border Style="{StaticResource SectionCard}">
                     <VerticalStackLayout Spacing="10">
-                        <Label Text="Contact" Style="{StaticResource SectionLabel}"/>
-                        <Label Text="This app is maintained on GitHub. To report a privacy concern, open an issue on the project's GitHub Issues page."
+                        <Label Text="{svc:Tr Pv_Contact}" Style="{StaticResource SectionLabel}"/>
+                        <Label Text="{svc:Tr Pv_ContactBody}"
                                Style="{StaticResource ValueLabel}"
                                LineBreakMode="WordWrap"/>
                         <Button x:Name="ContactGitHubButton"
-                                Text="Open GitHub Issues"
+                                Text="{svc:Tr Pv_OpenIssues}"
                                 BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray800}}"
                                 TextColor="{AppThemeBinding Light={StaticResource Gray900}, Dark={StaticResource White}}"
                                 CornerRadius="14"
@@ -199,12 +200,12 @@
 
         <Border Grid.Row="1" Style="{StaticResource BottomActionBorder}">
             <Grid ColumnDefinitions="*, *" ColumnSpacing="12">
-                <Button Text="Back"
+                <Button Text="{svc:Tr Pv_Back}"
                         Style="{StaticResource TextButton}"
                         HeightRequest="44"
                         Clicked="OnBackClicked"/>
                 <Button Grid.Column="1"
-                        Text="View on GitHub"
+                        Text="{svc:Tr Pv_ViewOnGithub}"
                         BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                         TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
                         FontFamily="InterSemiBold"

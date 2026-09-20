@@ -21,7 +21,7 @@ public readonly record struct BackupSummary(
     int RunHistoryCount)
 {
     /// <summary>The date, or a neutral phrase when the file carries no timestamp.</summary>
-    public string ExportedAtText => ExportedAt == default ? "unknown date" : ExportedAt.ToString("MMM dd, yyyy HH:mm");
+    public string ExportedAtText => ExportedAt == default ? AppStrings.T("Bk_UnknownDate") : ExportedAt.ToString("MMM dd, yyyy HH:mm");
 }
 
 /// <summary>
@@ -52,7 +52,7 @@ public static class AppBackupCodec
 
         if (string.IsNullOrWhiteSpace(json))
         {
-            error = "The file is empty.";
+            error = AppStrings.T("Bk_FileEmpty");
             return false;
         }
 
@@ -63,13 +63,13 @@ public static class AppBackupCodec
         }
         catch (JsonException)
         {
-            error = "The file is not a Streak Saver backup.";
+            error = AppStrings.T("Bk_NotBackup");
             return false;
         }
 
         if (parsed is null)
         {
-            error = "The file is not a Streak Saver backup.";
+            error = AppStrings.T("Bk_NotBackup");
             return false;
         }
 
@@ -77,8 +77,7 @@ public static class AppBackupCodec
         // of half-applied.
         if (parsed.FormatVersion > AppBackup.CurrentFormatVersion)
         {
-            error = $"This backup was written by a newer version of the app (format {parsed.FormatVersion}). "
-                  + "Update the app, then restore it.";
+            error = string.Format(AppStrings.T("Bk_NewerFormat"), parsed.FormatVersion);
             return false;
         }
 

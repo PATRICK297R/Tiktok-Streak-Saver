@@ -64,14 +64,14 @@ public static class SendConfirmationSummary
         var (attempted, confirmed, unverified, failed) = Summarize(results);
 
         if (attempted == 0)
-            return "nothing to send";
+            return AppStrings.T("Send_NothingToSend");
 
-        var parts = new List<string> { $"{confirmed} sent" };
+        var parts = new List<string> { string.Format(AppStrings.T("Send_SentCount"), confirmed) };
 
         if (unverified > 0)
-            parts.Add($"{unverified} unverified");
+            parts.Add(string.Format(AppStrings.T("Send_UnverifiedCount"), unverified));
         if (failed > 0)
-            parts.Add($"{failed} failed");
+            parts.Add(string.Format(AppStrings.T("Send_FailedCount"), failed));
 
         return string.Join(", ", parts);
     }

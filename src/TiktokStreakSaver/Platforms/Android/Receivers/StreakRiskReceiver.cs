@@ -23,7 +23,7 @@ public class StreakRiskReceiver : BroadcastReceiver
     public const string ActionStreakRiskAlarm = AppConstants.ActionStreakRiskAlarm;
 
     private const string ChannelId = "streak_risk_channel";
-    private const string ChannelName = "Streak reminders";
+    private static string ChannelName => Localization.T("Android_RiskChannelName");
     private const int NotificationId = 9001;
 
     public override void OnReceive(Context? context, Intent? intent)
@@ -80,7 +80,7 @@ public class StreakRiskReceiver : BroadcastReceiver
             EnsureChannel(manager);
 
             var builder = new NotificationCompat.Builder(context, ChannelId)
-                .SetContentTitle("Streaks still need a message")
+                .SetContentTitle(Localization.T("Android_RiskTitle"))
                 .SetContentText(summary)
                 .SetStyle(new NotificationCompat.BigTextStyle().BigText(summary))
                 .SetSmallIcon(Resource.Drawable.ic_notification)
@@ -105,7 +105,7 @@ public class StreakRiskReceiver : BroadcastReceiver
         // Default importance so the reminder actually surfaces; it is infrequent by design.
         var channel = new NotificationChannel(ChannelId, ChannelName, NotificationImportance.Default)
         {
-            Description = "Warns when today's streaks have not been sent yet",
+            Description = Localization.T("Android_RiskChannelDesc"),
         };
 
         manager.CreateNotificationChannel(channel);

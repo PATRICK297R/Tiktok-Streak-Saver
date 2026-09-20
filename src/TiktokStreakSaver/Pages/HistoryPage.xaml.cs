@@ -59,19 +59,19 @@ public partial class HistoryPage : ContentPage
         _chartDrawable.IsDarkTheme = isDark;
         _chartDrawable.SuccessRate = rate;
         _chartDrawable.RateText = totalMessages > 0 ? $"{(int)(rate * 100)}%" : "—";
-        _chartDrawable.SubText = totalMessages > 0 ? "success" : "";
+        _chartDrawable.SubText = totalMessages > 0 ? Localization.T("Hist_ChartSuccess") : "";
         SuccessChartView.Invalidate();
 
         if (history.Count > 0)
         {
             SuccessRateLabel.Text = totalMessages > 0
-                ? $"{successMessages} of {totalMessages} messages successful"
-                : $"{history.Count(r => r.Success)} of {history.Count} runs successful";
+                ? string.Format(Localization.T("Hist_SummaryMessages"), successMessages, totalMessages)
+                : string.Format(Localization.T("Hist_SummaryRuns"), history.Count(r => r.Success), history.Count);
             int tracked = Math.Min(history.Count, SettingsService.MaxRunHistoryEntries);
             var week = RunHistoryStats.ForLastDays(history, 7, DateTime.Today);
             TotalRunsLabel.Text = week.HasData
-                ? $"Last {tracked} runs tracked | 7-day: {week.SuccessPercent}% success"
-                : $"Last {tracked} runs tracked";
+                ? string.Format(Localization.T("Hist_TrackedWeek"), tracked, week.SuccessPercent)
+                : string.Format(Localization.T("Hist_Tracked"), tracked);
 
             // Same clock source as the Dashboard, so the two pages can never disagree about the last
             // run. History[0] is the newest entry, because AddRunResult inserts at the front.
@@ -86,7 +86,7 @@ public partial class HistoryPage : ContentPage
         }
         else
         {
-            SuccessRateLabel.Text = "No data yet";
+            SuccessRateLabel.Text = Localization.T("Hist_NoData");
             TotalRunsLabel.Text = "";
             LastRunSummaryLabel.Text = "";
         }
@@ -104,13 +104,19 @@ public partial class HistoryPage : ContentPage
     private string ShortenErrorMessage(string? originalMsg)
     {
         if (string.IsNullOrEmpty(originalMsg)) return "";
-        if (originalMsg.Contains("login required", StringComparison.OrdinalIgnoreCase)) return "Login required";
-        if (originalMsg.Contains("navigate to", StringComparison.OrdinalIgnoreCase)) return "Navigation failed";
-        if (originalMsg.Contains("No network", StringComparison.OrdinalIgnoreCase)) return "No network";
-        if (originalMsg.Contains("stopped by user", StringComparison.OrdinalIgnoreCase)) return "Stopped by user";
-        if (originalMsg.Contains("WebView", StringComparison.OrdinalIgnoreCase)) return "WebView error";
+        // A stored error may have been written in either language, so the English wording and the translated
+        // short form are both matched before the message is replaced with the short form.
+        if (Matches(originalMsg, "login required", "Hist_ErrorLoginRequired")) return Localization.T("Hist_ErrorLoginRequired");
+        if (Matches(originalMsg, "navigate to", "Hist_ErrorNavigation")) return Localization.T("Hist_ErrorNavigation");
+        if (Matches(originalMsg, "No network", "Hist_ErrorNoNetwork")) return Localization.T("Hist_ErrorNoNetwork");
+        if (Matches(originalMsg, "stopped by user", "Hist_ErrorStopped")) return Localization.T("Hist_ErrorStopped");
+        if (Matches(originalMsg, "WebView", "Hist_ErrorWebView")) return Localization.T("Hist_ErrorWebView");
         return originalMsg;
     }
+
+    private static bool Matches(string message, string englishFragment, string key)
+        => message.Contains(englishFragment, StringComparison.OrdinalIgnoreCase)
+           || message.Contains(Localization.T(key), StringComparison.OrdinalIgnoreCase);
 
     private View CreateHistoryView(StreakRunResult run)
     {
@@ -155,7 +161,7 @@ public partial class HistoryPage : ContentPage
         {
             var testLabel = new Label
             {
-                Text = "Test run — nothing was sent",
+                Text = Localization.T("Hist_TestRun"),
                 FontSize = 13,
                 FontFamily = "InterMedium",
             };
@@ -172,7 +178,7 @@ public partial class HistoryPage : ContentPage
             {
                 var verifyLabel = new Label
                 {
-                    Text = $"{confirmed}/{attempted} confirmed, {unverified} unverified",
+                    Text = string.Format(Localization.T("Hist_ConfirmedUnverified"), confirmed, attempted, unverified),
                     FontSize = 13,
                 };
                 verifyLabel.SetAppThemeColor(Label.TextColorProperty,
@@ -189,9 +195,9 @@ public partial class HistoryPage : ContentPage
             if (skippedCount > 0)
             {
                 var hStack = new HorizontalStackLayout { Spacing = 16 };
-                var l1 = new Label { Text = $"{successCount}/{totalCount} sent", FontSize = 13 };
+                var l1 = new Label { Text = string.Format(Localization.T("Hist_SentCount"), successCount, totalCount), FontSize = 13 };
                 l1.SetAppThemeColor(Label.TextColorProperty, GetThemeColor("Gray400"), GetThemeColor("Gray400"));
-                var l2 = new Label { Text = $"{skippedCount} skipped", FontSize = 13 };
+                var l2 = new Label { Text = string.Format(Localization.T("Hist_SkippedCount"), skippedCount), FontSize = 13 };
                 l2.SetAppThemeColor(Label.TextColorProperty, GetThemeColor("Gray400"), GetThemeColor("Gray400"));
                 hStack.Children.Add(l1);
                 hStack.Children.Add(l2);
@@ -199,7 +205,7 @@ public partial class HistoryPage : ContentPage
             }
             else
             {
-                var infoLabel = new Label { Text = $"{successCount}/{totalCount} messages sent", FontSize = 13 };
+                var infoLabel = new Label { Text = string.Format(Localization.T("Hist_MessagesSent"), successCount, totalCount), FontSize = 13 };
                 infoLabel.SetAppThemeColor(Label.TextColorProperty, GetThemeColor("Gray400"), GetThemeColor("Gray400"));
                 infoStack.Children.Add(infoLabel);
             }
@@ -221,15 +227,15 @@ public partial class HistoryPage : ContentPage
         var history = _settingsService.GetRunHistory();
         if (history.Count == 0 && !HasLogsToClear())
         {
-            await DisplayAlert("Nothing to Clear", "There is no activity or log data to clear.", "OK");
+            await DisplayAlert(Localization.T("Hist_NothingToClear"), Localization.T("Hist_NothingToClearBody"), Localization.T("Common_OK"));
             return;
         }
 
         bool confirm = await DisplayAlert(
-            "Clear Activity",
-            "This will clear run history and diagnostic logs from this device.",
-            "Clear",
-            "Cancel");
+            Localization.T("Hist_ClearTitle"),
+            Localization.T("Hist_ClearBody"),
+            Localization.T("Hist_Clear"),
+            Localization.T("Common_Cancel"));
         if (!confirm)
             return;
 
@@ -277,11 +283,11 @@ public partial class HistoryPage : ContentPage
 #if IOS
                 var paths = string.Join(Environment.NewLine, TiktokStreakSaver.Platforms.iOS.Services.AppGroupPaths.GetAllRunLogsFilePaths());
                 await DisplayAlert(
-                    "Export Logs",
-                    $"No logs to export.{Environment.NewLine}{Environment.NewLine}Checked paths:{Environment.NewLine}{paths}",
-                    "OK");
+                    Localization.T("Hist_ExportLogs"),
+                    string.Format(Localization.T("Hist_NoLogsExportPaths"), Environment.NewLine, Environment.NewLine + paths),
+                    Localization.T("Common_OK"));
 #else
-                await DisplayAlert("Export Logs", "No logs to export.", "OK");
+                await DisplayAlert(Localization.T("Hist_ExportLogs"), Localization.T("Hist_NoLogsToExport"), Localization.T("Common_OK"));
 #endif
                 return;
             }
@@ -289,9 +295,9 @@ public partial class HistoryPage : ContentPage
             var fileName = $"streak_logs_{DateTime.Now:yyyyMMdd_HHmm}.txt";
             var filePath = System.IO.Path.Combine(FileSystem.CacheDirectory, fileName);
             await System.IO.File.WriteAllTextAsync(filePath, textContent);
-            await Share.Default.RequestAsync(new ShareFileRequest { Title = "Export System Logs", File = new ShareFile(filePath, "text/plain") });
+            await Share.Default.RequestAsync(new ShareFileRequest { Title = Localization.T("Hist_ExportSystemLogs"), File = new ShareFile(filePath, "text/plain") });
         }
-        catch (Exception ex) { await DisplayAlert("Export Failed", $"Could not export logs: {ex.Message}", "OK"); }
+        catch (Exception ex) { await DisplayAlert(Localization.T("Hist_ExportFailed"), string.Format(Localization.T("Hist_ExportFailedBody"), ex.Message), Localization.T("Common_OK")); }
         finally { _isExportingLogs = false; }
     }
 }

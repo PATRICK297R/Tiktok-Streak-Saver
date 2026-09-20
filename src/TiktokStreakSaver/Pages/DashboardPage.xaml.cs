@@ -71,7 +71,7 @@ public partial class DashboardPage : ContentPage
 
 #if IOS
         PullToRefreshHintLabel.IsVisible = false;
-        NextRunTitleLabel.Text = "Automation";
+        NextRunTitleLabel.Text = Localization.T("Dash_Automation");
 #endif
 
         this.Opacity = 0;
@@ -80,7 +80,7 @@ public partial class DashboardPage : ContentPage
             this.FadeTo(1, 280, Easing.SinInOut),
             this.TranslateTo(0, 0, 280, Easing.SinInOut));
 
-        GreetingLabel.Text = $"Hi, {_sessionService.GetDisplayName()}";
+        GreetingLabel.Text = string.Format(Localization.T("Dash_Greeting"), _sessionService.GetDisplayName());
 
         LoadProfilePhoto();
         await RefreshSessionUiAsync();
@@ -144,7 +144,7 @@ public partial class DashboardPage : ContentPage
     {
         MasterRunButton.IsEnabled = true;
         MasterRunButton.Opacity = 1.0;
-        MasterRunButton.Text = runReady ? "Run Now" : "Login Required";
+        MasterRunButton.Text = runReady ? Localization.T("Dash_RunNow") : Localization.T("Dash_LoginRequired");
     }
 
     private async Task RefreshSessionUiAsync()
@@ -236,7 +236,7 @@ public partial class DashboardPage : ContentPage
             {
                 await MainThread.InvokeOnMainThreadAsync(async () =>
                     await Navigation.PushModalAsync(new AboutPopupPage(
-                        "Welcome to Streak Saver", currentVersion, string.Empty, false)));
+                        Localization.T("About_Welcome"), currentVersion, string.Empty, false)));
                 return;
             }
 
@@ -273,7 +273,7 @@ public partial class DashboardPage : ContentPage
 
             await MainThread.InvokeOnMainThreadAsync(async () =>
                 await Navigation.PushModalAsync(new AboutPopupPage(
-                    "Update Available!", remoteVersion, updateCheck.Changelog, true, updateCheck.ApkDownloadUrl)));
+                    Localization.T("Dash_UpdateAvailable"), remoteVersion, updateCheck.Changelog, true, updateCheck.ApkDownloadUrl)));
         }
         catch { }
         finally { _isCheckingForUpdates = false; }
@@ -301,8 +301,8 @@ public partial class DashboardPage : ContentPage
         if (isScheduled)
         {
 #if IOS
-            NextRunTitleLabel.Text = "Automation";
-            NextRunLabel.Text = "Shortcuts app";
+            NextRunTitleLabel.Text = Localization.T("Dash_Automation");
+            NextRunLabel.Text = Localization.T("Dash_ShortcutsApp");
 #else
             NextRunLabel.Text = FormatNextRun(_settingsService.GetNextRunTime());
 #endif
@@ -310,11 +310,11 @@ public partial class DashboardPage : ContentPage
 #if IOS
         else
         {
-            NextRunTitleLabel.Text = "Automation";
-            NextRunLabel.Text = "Set up in Profile";
+            NextRunTitleLabel.Text = Localization.T("Dash_Automation");
+            NextRunLabel.Text = Localization.T("Dash_SetUpInProfile");
         }
 #else
-        else NextRunLabel.Text = "Not scheduled";
+        else NextRunLabel.Text = Localization.T("Dash_NotScheduled");
 #endif
 
         var history = _settingsService.GetRunHistory();
@@ -355,22 +355,22 @@ public partial class DashboardPage : ContentPage
         var timeUntil = nextRun - now;
 
         if (timeUntil.TotalSeconds < 30)
-            return "Now";
+            return Localization.T("Dash_NextRunNow");
         if (timeUntil.TotalMinutes < 1)
-            return "In <1 min";
+            return Localization.T("Dash_NextRunInLessThanMinute");
         if (timeUntil.TotalMinutes < 60)
-            return $"In {(int)timeUntil.TotalMinutes} min";
+            return string.Format(Localization.T("Dash_NextRunInMinutes"), (int)timeUntil.TotalMinutes);
 
         var time = nextRun.ToString("HH:mm");
         var nextDate = nextRun.Date;
         var today = now.Date;
 
         if (nextDate == today)
-            return $"Today at {time}";
+            return string.Format(Localization.T("Dash_NextRunToday"), time);
         if (nextDate == today.AddDays(1))
-            return $"Tomorrow at {time}";
+            return string.Format(Localization.T("Dash_NextRunTomorrow"), time);
 
-        return nextRun.ToString("ddd, MMM dd") + $" at {time}";
+        return string.Format(Localization.T("Dash_NextRunOnDate"), nextRun.ToString("ddd, MMM dd"), time);
     }
 
     private void OnMessageChanged(object? sender, TextChangedEventArgs e)
@@ -410,14 +410,14 @@ public partial class DashboardPage : ContentPage
         var friends = _settingsService.GetEnabledFriends();
         if (friends.Count == 0)
         {
-            await DisplayAlert("No Friends", "Please add at least one friend before running.", "OK");
+            await DisplayAlert(Localization.T("Dash_NoFriends"), Localization.T("Dash_NoFriendsBody"), Localization.T("Common_OK"));
             return;
         }
 
         var confirm = await DisplayAlert(
-            "Run Now",
-            $"This will send your streak message to {friends.Count} friend{(friends.Count != 1 ? "s" : "")}. Continue?",
-            "Run", "Cancel");
+            Localization.T("Dash_RunNow"),
+            string.Format(Localization.T(friends.Count == 1 ? "Dash_ConfirmRunOne" : "Dash_ConfirmRunMany"), friends.Count),
+            Localization.T("Dash_Run"), Localization.T("Common_Cancel"));
         if (!confirm) return;
 
         _messageDraft = MessageEditor.Text ?? _messageDraft;
@@ -431,12 +431,12 @@ public partial class DashboardPage : ContentPage
         bool started = TiktokStreakSaver.Platforms.Android.StreakScheduler.RunNow(context);
         if (started)
         {
-            await DisplayAlert("Started", "Streak run started. Check the notification for progress.", "OK");
+            await DisplayAlert(Localization.T("Dash_Started"), Localization.T("Dash_StartedBody"), Localization.T("Common_OK"));
             UpdateStatus();
         }
         else
         {
-            await DisplayAlert("Already Running", "A process is already running. Please wait for it to finish.", "OK");
+            await DisplayAlert(Localization.T("Dash_AlreadyRunning"), Localization.T("Dash_AlreadyRunningBody"), Localization.T("Common_OK"));
         }
 #elif IOS
         await Platforms.iOS.Services.IosNotificationService.RequestPermissionAsync();
@@ -445,7 +445,7 @@ public partial class DashboardPage : ContentPage
         await ShowIosRunResultAsync(result);
         UpdateStatus();
 #else
-        await DisplayAlert("Info", "This feature is only available on Android", "OK");
+        await DisplayAlert(Localization.T("Dash_Info"), Localization.T("Dash_AndroidOnly"), Localization.T("Common_OK"));
 #endif
     }
 
@@ -461,7 +461,7 @@ public partial class DashboardPage : ContentPage
 
     private async void OnRefreshing(object? sender, EventArgs e)
     {
-        GreetingLabel.Text = $"Hi, {_sessionService.GetDisplayName()}";
+        GreetingLabel.Text = string.Format(Localization.T("Dash_Greeting"), _sessionService.GetDisplayName());
         LoadProfilePhoto();
         await RefreshSessionUiAsync();
         LoadSettings();
@@ -539,7 +539,7 @@ public partial class DashboardPage : ContentPage
             var status = await Permissions.RequestAsync<Permissions.PostNotifications>();
             if (status != PermissionStatus.Granted)
             {
-                await DisplayAlert("Permission Required", "Notification permission is required to show status while sending streaks.", "OK");
+                await DisplayAlert(Localization.T("Dash_PermissionRequired"), Localization.T("Dash_NotificationPermissionBody"), Localization.T("Common_OK"));
                 return false;
             }
         }
@@ -555,21 +555,21 @@ public partial class DashboardPage : ContentPage
         var (title, message) = result.Status switch
         {
             Platforms.iOS.Services.IosRunStatus.Completed =>
-                ("Done", result.Message ?? "Streak run finished."),
+                (Localization.T("Ios_Done"), result.Message ?? Localization.T("Dash_IosRunFinished")),
             Platforms.iOS.Services.IosRunStatus.AlreadyRunning =>
-                ("Already Running", result.Message ?? "A streak run is already in progress."),
+                (Localization.T("Dash_AlreadyRunning"), result.Message ?? Localization.T("Dash_IosRunInProgress")),
             Platforms.iOS.Services.IosRunStatus.NoCookies =>
-                ("Login Required", result.Message ?? "Sign in to TikTok again."),
+                (Localization.T("Dash_LoginRequired"), result.Message ?? Localization.T("Dash_SignInAgain")),
             Platforms.iOS.Services.IosRunStatus.Offline =>
-                ("Offline", result.Message ?? "No network connection."),
+                (Localization.T("Dash_Offline"), result.Message ?? Localization.T("Dash_NoNetwork")),
             Platforms.iOS.Services.IosRunStatus.NoFriendsDue =>
-                ("No Friends Due", result.Message ?? "No friends need a message today."),
+                (Localization.T("Dash_NoFriendsDue"), result.Message ?? Localization.T("Dash_NoFriendsDueBody")),
             Platforms.iOS.Services.IosRunStatus.TimedOut =>
-                ("Timed Out", result.Message ?? "The streak run timed out."),
+                (Localization.T("Dash_TimedOut"), result.Message ?? Localization.T("Dash_TimedOutBody")),
             Platforms.iOS.Services.IosRunStatus.EngineMissing =>
-                ("Unavailable", result.Message ?? "Native streak engine is missing."),
+                (Localization.T("Dash_Unavailable"), result.Message ?? Localization.T("Dash_EngineMissing")),
             _ =>
-                ("Run Failed", result.Message ?? "Streak run failed.")
+                (Localization.T("Dash_RunFailed"), result.Message ?? Localization.T("Dash_RunFailedBody"))
         };
 
         if ((result.Status is Platforms.iOS.Services.IosRunStatus.Failed
@@ -581,13 +581,13 @@ public partial class DashboardPage : ContentPage
 
         if (result.Status == Platforms.iOS.Services.IosRunStatus.NoCookies)
         {
-            bool signIn = await DisplayAlert(title, message, "Sign In", "OK");
+            bool signIn = await DisplayAlert(title, message, Localization.T("Dash_SignIn"), Localization.T("Common_OK"));
             if (signIn)
                 await Navigation.PushAsync(new LoginPage());
             return;
         }
 
-        await DisplayAlert(title, message, "OK");
+        await DisplayAlert(title, message, Localization.T("Common_OK"));
     }
 
     private static string FormatIosRunAlertMessage(string primary, string details)
@@ -597,7 +597,9 @@ public partial class DashboardPage : ContentPage
         if (combined.Length <= maxLength)
             return combined;
 
-        return combined[..(maxLength - 35)] + "… (see History → Export Logs)";
+        // The tail is measured rather than assumed, because its length depends on the language.
+        var tail = Localization.T("Dash_SeeHistoryExportLogs");
+        return combined[..(maxLength - tail.Length)] + tail;
     }
 #endif
 }

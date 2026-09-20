@@ -6,6 +6,10 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
+
+        // The stored language is read once, before any window is built, so the first screen already draws
+        // in the right language rather than switching a moment after it appears.
+        Services.Localization.Current.Load();
     }
 
     protected override Window CreateWindow(IActivationState? activationState)

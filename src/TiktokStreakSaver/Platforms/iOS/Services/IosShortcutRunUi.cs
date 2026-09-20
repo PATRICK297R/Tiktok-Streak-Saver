@@ -1,3 +1,5 @@
+using TiktokStreakSaver.Services;
+
 namespace TiktokStreakSaver.Platforms.iOS.Services;
 
 /// <summary>Minimal UI while a Shortcut-triggered run is in progress.</summary>
@@ -29,14 +31,14 @@ internal static class IosShortcutRunUi
                         new ActivityIndicator { IsRunning = true, Color = Colors.White },
                         new Label
                         {
-                            Text = "Sending streak messages…",
+                            Text = Localization.T("Ios_SendingMessages"),
                             TextColor = Colors.White,
                             FontSize = 18,
                             HorizontalTextAlignment = TextAlignment.Center
                         },
                         new Label
                         {
-                            Text = "Streak Saver stays open briefly while TikTok runs in an invisible browser — required on iOS.",
+                            Text = Localization.T("Ios_StaysOpenBriefly"),
                             TextColor = Colors.White.WithAlpha(0.75f),
                             FontSize = 13,
                             HorizontalTextAlignment = TextAlignment.Center,

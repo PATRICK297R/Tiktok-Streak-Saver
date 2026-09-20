@@ -55,6 +55,16 @@ public partial class ImportContactsPage : ContentPage
     /// </summary>
     private readonly List<Action> _rowRefreshers = new();
 
+    /// <summary>
+    /// How many of the snapshot's chats have already been drawn into the live preview.
+    /// </summary>
+    /// <remarks>
+    /// Counted so each poll appends only what is new. Redrawing the whole preview on every tick would
+    /// throw away and rebuild every row once a second, which flickers and grows more expensive the longer
+    /// the list gets - and the list is longest exactly when the scan is nearly finished.
+    /// </remarks>
+    private int _previewRendered;
+
     /// <summary>How often the page looks for the service's progress. Far shorter than reading one chat takes.</summary>
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
 
@@ -87,6 +97,7 @@ public partial class ImportContactsPage : ContentPage
         OutcomePanel.IsVisible = false;
         ScanPanel.IsVisible = true;
         ScanDetailLabel.Text = string.Empty;
+        ResetScanPreview();
 
         // The inbox needs a session; without one TikTok shows a login wall and the scan would report
         // "nothing found", which reads like a bug rather than a missing login.
@@ -95,8 +106,8 @@ public partial class ImportContactsPage : ContentPage
             // Offered rather than enforced by closing the page. Being told to sign in and then having the
             // page close under you is a dead end: the sign-in it needs is one page away, and there is no way
             // back to the import from where you are left standing.
-            ShowScanOutcome("Sign in required",
-                "Sign in to TikTok first, then import your chats.",
+            ShowScanOutcome(Localization.T("Imp_SignInRequiredTitle"),
+                Localization.T("Imp_SignInRequiredBody"),
                 offerSignIn: true);
             return;
         }
@@ -124,7 +135,7 @@ public partial class ImportContactsPage : ContentPage
         if (snapshot is null)
         {
             StartServiceScan();
-            ScanDetailLabel.Text = "Starting the reader…";
+            ScanDetailLabel.Text = Localization.T("Imp_StartingReader");
         }
 
         StartPolling();
@@ -133,8 +144,8 @@ public partial class ImportContactsPage : ContentPage
         // equivalent on iOS, and Apple has nothing like a foreground service to keep a WebView reading
         // while the app is closed - which is the point of the feature. Saying so plainly is better than a
         // progress screen that can never move.
-        ShowScanOutcome("Not available on iPhone",
-            "Importing your chats needs Android, so it is not available on iPhone yet.",
+        ShowScanOutcome(Localization.T("Imp_IosTitle"),
+            Localization.T("Imp_IosBody"),
             offerSignIn: false);
 #endif
     }
@@ -181,12 +192,12 @@ public partial class ImportContactsPage : ContentPage
             LogDiagnostic($"import could not be started: {ex.Message}");
 
             ScanActivity.IsRunning = false;
-            ScanStatusLabel.Text = "The import could not be started on this device.";
+            ScanStatusLabel.Text = Localization.T("Imp_CouldNotStart");
             StopScanButton.IsVisible = false;
 
-            await DisplayAlert("Import unavailable",
-                $"The background reader could not be started: {ex.Message}",
-                "OK");
+            await DisplayAlert(Localization.T("Imp_UnavailableTitle"),
+                string.Format(Localization.T("Imp_UnavailableBody"), ex.Message),
+                Localization.T("Common_OK"));
         }
 #else
         await Task.CompletedTask;
@@ -247,8 +258,8 @@ public partial class ImportContactsPage : ContentPage
 
             // Offered as a panel rather than an alert, so the retry it needs is one tap away instead of
             // being a message about a problem with no way to act on it.
-            ShowScanOutcome("Import stopped",
-                "The background reader stopped before it finished. Try again, or close the app and reopen it if this keeps happening.",
+            ShowScanOutcome(Localization.T("Imp_StoppedTitle"),
+                Localization.T("Imp_StoppedBody") + " " + Localization.T("Imp_StoppedHint"),
                 offerSignIn: false);
             return;
         }
@@ -260,6 +271,124 @@ public partial class ImportContactsPage : ContentPage
         var detail = DescribeScanProgress(snapshot);
         if (detail != ScanDetailLabel.Text)
             ScanDetailLabel.Text = detail;
+
+        AppendScanPreview(snapshot.Items);
+    }
+
+    /// <summary>
+    /// Adds any chats read since the last poll to the live preview, so each one appears as it is read
+    /// rather than the whole list arriving at the end.
+    /// </summary>
+    /// <remarks>
+    /// Only appends. The rows carry no gestures and no controls, so there is nothing for the user to press
+    /// that the next poll would undo; editing is offered by the review list, which is built once the scan
+    /// has stopped and the list has stopped changing.
+    /// </remarks>
+    private void AppendScanPreview(IReadOnlyList<ContactScanItemDto>? items)
+    {
+        if (items is null || items.Count <= _previewRendered)
+            return;
+
+        for (var i = _previewRendered; i < items.Count; i++)
+            ScanPreviewList.Children.Add(CreatePreviewRow(items[i]));
+
+        _previewRendered = items.Count;
+        ScanPreviewSection.IsVisible = true;
+    }
+
+    /// <summary>Empties the preview, for the start of a scan and for going back to the scan panel.</summary>
+    private void ResetScanPreview()
+    {
+        ScanPreviewList.Children.Clear();
+        _previewRendered = 0;
+        ScanPreviewSection.IsVisible = false;
+    }
+
+    /// <summary>
+    /// One chat in the preview: a read marker, the name, and the handle or the word Group.
+    /// <para>
+    /// Deliberately not a <c>CreateResultRow</c>: that one carries a tick box and an Edit button, and a
+    /// row that looks editable but does nothing is worse than one that plainly does not.
+    /// </para>
+    /// </summary>
+    private static View CreatePreviewRow(ContactScanItemDto item)
+    {
+        var name = string.IsNullOrWhiteSpace(item.DisplayName) ? item.Username : item.DisplayName;
+        var subtitle = item.IsGroup
+            ? Localization.T("Common_Group")
+            : (string.IsNullOrWhiteSpace(item.Username) ? Localization.T("Imp_NoHandleRead") : $"@{item.Username}");
+
+        var row = new Border
+        {
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 12 },
+            Padding = new Thickness(12, 10),
+        };
+        row.SetAppThemeColor(Border.BackgroundColorProperty,
+            ThemeColor("ListItemLight", "#F5F5F7"), ThemeColor("ListItemDark", "#252629"));
+        row.SetAppThemeColor(Border.StrokeProperty,
+            ThemeColor("ListItemBorderLight", "#EBEDF0"), ThemeColor("ListItemBorderDark", "#2E3036"));
+
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitionCollection
+            {
+                new ColumnDefinition { Width = GridLength.Auto },
+                new ColumnDefinition { Width = GridLength.Star },
+            },
+            ColumnSpacing = 10,
+        };
+
+        // A tick rather than a spinner: by the time a chat reaches this list it has been read and judged,
+        // and this is what says so without inviting a press.
+        var tick = new Label
+        {
+            Text = "✓",
+            FontSize = 14,
+            FontFamily = "InterSemiBold",
+            VerticalOptions = LayoutOptions.Center,
+        };
+        tick.SetAppThemeColor(Label.TextColorProperty,
+            ThemeColor("Success", "#22946E"), ThemeColor("SuccessDark", "#47D5A6"));
+        grid.Children.Add(tick);
+
+        var stack = new VerticalStackLayout { Spacing = 2 };
+        var nameLabel = new Label
+        {
+            Text = name,
+            FontSize = 15,
+            FontFamily = "InterMedium",
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1,
+        };
+        nameLabel.SetAppThemeColor(Label.TextColorProperty,
+            ThemeColor("Gray950", "#141517"), ThemeColor("White", "#FFFFFF"));
+        stack.Children.Add(nameLabel);
+
+        var subtitleLabel = new Label
+        {
+            Text = subtitle,
+            FontSize = 13,
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1,
+        };
+        subtitleLabel.SetAppThemeColor(Label.TextColorProperty,
+            ThemeColor("Gray400", "#8B8F96"), ThemeColor("Gray400", "#8B8F96"));
+        stack.Children.Add(subtitleLabel);
+
+        Grid.SetColumn(stack, 1);
+        grid.Children.Add(stack);
+
+        row.Content = grid;
+        return row;
+    }
+
+    /// <summary>Reads a colour token, falling back to a literal so a missing key cannot throw mid-scan.</summary>
+    private static Color ThemeColor(string key, string fallbackHex)
+    {
+        if (Application.Current is { } app && app.Resources.TryGetValue(key, out var value) && value is Color color)
+            return color;
+        return Color.FromArgb(fallbackHex);
     }
 
     /// <summary>
@@ -273,11 +402,11 @@ public partial class ImportContactsPage : ContentPage
 
         // Nothing opened yet: the page is still loading, or the first chat is being read.
         if (checkedCount <= 0)
-            return "Reading each chat in turn takes a couple of seconds, so a long list takes a while.";
+            return Localization.T("Imp_ReadingSlow");
 
-        var chats = read == 1 ? "chat" : "chats";
-
-        return $"{read} {chats} read, {checkedCount} checked. You can close the app — the scan keeps going.";
+        return read == 1
+            ? string.Format(Localization.T("Imp_ProgressOne"), read, checkedCount)
+            : string.Format(Localization.T("Imp_ProgressMany"), read, checkedCount);
     }
 
     /// <summary>
@@ -287,7 +416,7 @@ public partial class ImportContactsPage : ContentPage
     private void OnStopScanClicked(object? sender, EventArgs e)
     {
         StopScanButton.IsEnabled = false;
-        ScanStatusLabel.Text = "Stopping…";
+        ScanStatusLabel.Text = Localization.T("Imp_Stopping");
 
 #if ANDROID
         try
@@ -319,9 +448,9 @@ public partial class ImportContactsPage : ContentPage
         if (!_toldAboutBackground && !_resultsShown)
         {
             _toldAboutBackground = true;
-            await DisplayAlert("Still reading",
-                "The import keeps running while the app is closed. You will get a notification when it is done — open this page again to review the chats.",
-                "OK");
+            await DisplayAlert(Localization.T("Imp_StillReadingTitle"),
+                Localization.T("Imp_StillBody") + " " + Localization.T("Imp_StillHint"),
+                Localization.T("Common_OK"));
         }
 
         await Navigation.PopAsync();
@@ -398,7 +527,7 @@ public partial class ImportContactsPage : ContentPage
                 : ContactScanReader.DescribeEmptyScan(snapshot.ToScanDto());
 
             ShowScanOutcome(
-                snapshot.Phase == ContactScanPhase.Failed ? "Import failed" : "Nothing could be read",
+                snapshot.Phase == ContactScanPhase.Failed ? Localization.T("Imp_FailedTitle") : Localization.T("Imp_NothingReadTitle"),
                 reason,
                 // A rejected session is much the commonest reason an import fails and it is the one the user
                 // can do something about, so the way to it is offered rather than described. It costs nothing
@@ -410,17 +539,19 @@ public partial class ImportContactsPage : ContentPage
         if (found.Count == 0)
         {
             // A success with nothing to do, which still needs a way out that is not "close and start again".
-            ShowScanOutcome("Nothing to add",
-                $"Read {scanned.Count} {(scanned.Count == 1 ? "conversation" : "conversations")}, and all of them are already on your list.",
+            ShowScanOutcome(Localization.T("Imp_NothingToAddTitle"),
+                scanned.Count == 1
+                    ? string.Format(Localization.T("Imp_AllKnownOne"), scanned.Count)
+                    : string.Format(Localization.T("Imp_AllKnownMany"), scanned.Count),
                 offerSignIn: false);
             return;
         }
 
         _draft = new ImportDraft(found);
 
-        ResultsDetailLabel.Text = $"Read {scanned.Count} conversations. "
-            + (alreadyKnown > 0 ? $"{alreadyKnown} were already on your list. " : string.Empty)
-            + "Whatever is ticked is added to the end of your send order.";
+        ResultsDetailLabel.Text = string.Format(Localization.T("Scan_ReadConversations"), scanned.Count) + " "
+            + (alreadyKnown > 0 ? string.Format(Localization.T("Imp_ResultsKnown"), alreadyKnown) + " " : string.Empty)
+            + Localization.T("Imp_ResultsTickHint");
 
         // A scan that stopped early has to say so, or a short list reads as a complete one.
         ResultsWarningLabel.Text = snapshot.Message;
@@ -486,6 +617,7 @@ public partial class ImportContactsPage : ContentPage
         _resultsShown = false;
         _draft = new ImportDraft(null);
         ShowRows();
+        ResetScanPreview();
 
         ResultsPanel.IsVisible = false;
         OutcomePanel.IsVisible = false;
@@ -495,7 +627,7 @@ public partial class ImportContactsPage : ContentPage
         StopScanButton.IsVisible = true;
         StopScanButton.IsEnabled = true;
         CloseScanButton.IsVisible = true;
-        ScanStatusLabel.Text = "Opening your inbox…";
+        ScanStatusLabel.Text = Localization.T("Imp_Opening");
         ScanDetailLabel.Text = string.Empty;
 
         StartServiceScan();
@@ -533,7 +665,7 @@ public partial class ImportContactsPage : ContentPage
         ResultsBlockedLabel.IsVisible = blocked is not null;
 
         var toAdd = _draft.ToAdd().Count;
-        AddContactsButton.Text = toAdd == 1 ? "Add 1" : $"Add {toAdd}";
+        AddContactsButton.Text = toAdd == 1 ? Localization.T("Imp_AddOne") : string.Format(Localization.T("Imp_AddMany"), toAdd);
         AddContactsButton.IsEnabled = toAdd > 0 && !_isAdding;
     }
 
@@ -576,7 +708,7 @@ public partial class ImportContactsPage : ContentPage
 
         var editButton = new Button
         {
-            Text = "Edit",
+            Text = Localization.T("Fr_Edit"),
             BackgroundColor = Colors.Transparent,
             FontSize = 12,
             Padding = new Thickness(8),
@@ -664,17 +796,19 @@ public partial class ImportContactsPage : ContentPage
     private async Task EditEntryAsync(ImportDraftEntry entry)
     {
         var config = entry.Entry;
-        var typeChange = config.IsGroup ? "Change to person" : "Change to group";
+        var typeChange = config.IsGroup ? Localization.T("Imp_ChangeToPerson") : Localization.T("Imp_ChangeToGroup");
+        var changeName = Localization.T("Imp_ChangeName");
+        var changeUsername = Localization.T("Imp_ChangeUsername");
 
-        var choice = await DisplayActionSheet(entry.Title, "Cancel", null,
-            "Change name", "Change username", typeChange);
+        var choice = await DisplayActionSheet(entry.Title, Localization.T("Common_Cancel"), null,
+            changeName, changeUsername, typeChange);
 
-        if (choice == "Change name")
+        if (choice == changeName)
         {
-            var typed = await DisplayPromptAsync("Change name",
+            var typed = await DisplayPromptAsync(Localization.T("Imp_ChangeName"),
                 config.IsGroup
-                    ? "A group is found by this name, so it has to match the chat header in TikTok:"
-                    : "This is only a label; the username is what the app sends to:",
+                    ? Localization.T("Imp_GroupNamePrompt")
+                    : Localization.T("Imp_PersonNamePrompt"),
                 initialValue: config.DisplayName ?? string.Empty);
 
             if (typed is null)
@@ -682,14 +816,14 @@ public partial class ImportContactsPage : ContentPage
 
             if (!ContactEditRules.TrySetDisplayName(config, typed, out var nameError))
             {
-                await DisplayAlert("Not saved", nameError ?? "That name could not be used.", "OK");
+                await DisplayAlert(Localization.T("Imp_NotSavedTitle"), nameError ?? Localization.T("Imp_NameUnusable"), Localization.T("Common_OK"));
                 return;
             }
         }
-        else if (choice == "Change username")
+        else if (choice == changeUsername)
         {
-            var typed = await DisplayPromptAsync("Change username",
-                "The TikTok username, without the @:",
+            var typed = await DisplayPromptAsync(Localization.T("Imp_ChangeUsername"),
+                Localization.T("Imp_UsernamePrompt"),
                 initialValue: config.Username ?? string.Empty);
 
             if (typed is null)
@@ -697,7 +831,7 @@ public partial class ImportContactsPage : ContentPage
 
             if (!ContactEditRules.TrySetUsername(config, typed, out var usernameError))
             {
-                await DisplayAlert("Not saved", usernameError ?? "That username could not be used.", "OK");
+                await DisplayAlert(Localization.T("Imp_NotSavedTitle"), usernameError ?? Localization.T("Imp_UsernameUnusable"), Localization.T("Common_OK"));
                 return;
             }
         }
@@ -707,12 +841,12 @@ public partial class ImportContactsPage : ContentPage
 
             if (!config.IsGroup && string.IsNullOrWhiteSpace(config.Username))
             {
-                var typed = await DisplayPromptAsync("Username",
-                    "Enter the TikTok username for this one, without the @:",
+                var typed = await DisplayPromptAsync(Localization.T("Imp_UsernameTitle"),
+                    Localization.T("Imp_UsernameForThisOne"),
                     initialValue: string.Empty);
 
                 if (typed is not null && !ContactEditRules.TrySetUsername(config, typed, out var usernameError))
-                    await DisplayAlert("Not saved", usernameError ?? "That username could not be used.", "OK");
+                    await DisplayAlert(Localization.T("Imp_NotSavedTitle"), usernameError ?? Localization.T("Imp_UsernameUnusable"), Localization.T("Common_OK"));
             }
         }
         else
@@ -740,15 +874,20 @@ public partial class ImportContactsPage : ContentPage
 
             if (!_settingsService.TrySaveFriendsList(all, out var error))
             {
-                await DisplayAlert("Could not save", error ?? "The list could not be saved on this device.", "OK");
+                await DisplayAlert(Localization.T("Imp_CouldNotSaveTitle"), error ?? Localization.T("Imp_ListSaveFailed"), Localization.T("Common_OK"));
                 return;
             }
 
             var skipped = _draft.IncludedCount - toAdd.Count;
-            await DisplayAlert("Added",
-                $"{toAdd.Count} {(toAdd.Count == 1 ? "entry" : "entries")} added. They are at the end of your send order, so move them with Reorder on the Friends page if you want them earlier."
-                + (skipped > 0 ? $" {skipped} ticked {(skipped == 1 ? "entry was" : "entries were")} left out because {(skipped == 1 ? "it needs" : "they need")} a username." : string.Empty),
-                "OK");
+            await DisplayAlert(Localization.T("Imp_AddedTitle"),
+                (toAdd.Count == 1
+                    ? string.Format(Localization.T("Imp_AddedOne"), toAdd.Count)
+                    : string.Format(Localization.T("Imp_AddedMany"), toAdd.Count)) + " "
+                + Localization.T("Imp_AddedAtEnd") + " " + Localization.T("Imp_AddedMoveHint")
+                + (skipped > 0 ? " " + (skipped == 1
+                    ? string.Format(Localization.T("Imp_SkippedOne"), skipped)
+                    : string.Format(Localization.T("Imp_SkippedMany"), skipped)) : string.Empty),
+                Localization.T("Common_OK"));
 
             await Navigation.PopAsync();
         }

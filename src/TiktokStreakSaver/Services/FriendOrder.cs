@@ -84,51 +84,35 @@ public static class FriendOrder
     }
 
     /// <summary>
-    /// Moves an entry so that it sits where another entry of the same kind sits, which is what dragging one
-    /// card of the Friends or Groups list onto another means.
+    /// Moves an entry so that it sits where another entry sits, which is what dragging one card onto
+    /// another means. The dragged entry takes the target's place and everything between them shifts by one.
     /// <para>
-    /// Only entries of the dragged entry's own kind take part, and only the slots they already occupy are
-    /// refilled. The other kind is left exactly where it was: the list is one saved sequence split into two
-    /// sections for display, so rearranging friends must not shuffle the groups, and the other way round.
+    /// Works across the whole saved list, including between a friend and a group. There is only one saved
+    /// sequence - the Friends and Groups sections are two filtered views of it - so the position of a group
+    /// relative to a friend is a real fact about the send order. Restricting a move to its own kind used to
+    /// hide that: the arrangement was editable within each section but the interleaving between them was
+    /// frozen, and nothing on screen said so.
     /// </para>
     /// <para>
-    /// Disabled entries take part, unlike in <see cref="TryMoveTo"/>. They are shown in the list with their
-    /// switch off, so a row the user can see and press has to move when they move it; a handle that did
-    /// nothing would read as a broken control.
+    /// Disabled entries take part, unlike in <see cref="TryMoveTo"/>. The arranging list shows them with
+    /// their switch off, so a row the user can see and drag has to move when they drag it; a handle that
+    /// did nothing would read as a broken control.
     /// </para>
     /// </summary>
-    public static bool TryMoveWithinSection(List<FriendConfig>? all, string? draggedId, string? targetId)
+    public static bool TryMoveWithinList(List<FriendConfig>? all, string? draggedId, string? targetId)
     {
         if (all is null || string.IsNullOrEmpty(draggedId) || string.IsNullOrEmpty(targetId) || draggedId == targetId)
             return false;
 
-        var dragged = all.FirstOrDefault(f => f is not null && f.Id == draggedId);
-        var target = all.FirstOrDefault(f => f is not null && f.Id == targetId);
-
-        // A friend cannot be dropped on a group: they are in different sections, so one of these ids came
-        // from somewhere the drag did not.
-        if (dragged is null || target is null || dragged.IsGroup != target.IsGroup)
-            return false;
-
-        var slots = new List<int>();
-        for (var i = 0; i < all.Count; i++)
-        {
-            if (all[i] is not null && all[i].IsGroup == dragged.IsGroup)
-                slots.Add(i);
-        }
-
-        var section = slots.Select(i => all[i]).ToList();
-        var from = section.FindIndex(f => f.Id == draggedId);
-        var to = section.FindIndex(f => f.Id == targetId);
+        var from = all.FindIndex(f => f is not null && f.Id == draggedId);
+        var to = all.FindIndex(f => f is not null && f.Id == targetId);
 
         if (from < 0 || to < 0 || from == to)
             return false;
 
-        section.RemoveAt(from);
-        section.Insert(to, dragged);
-
-        for (var i = 0; i < slots.Count; i++)
-            all[slots[i]] = section[i];
+        var dragged = all[from];
+        all.RemoveAt(from);
+        all.Insert(to, dragged);
 
         return true;
     }

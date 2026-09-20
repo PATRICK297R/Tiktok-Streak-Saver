@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:svc="clr-namespace:TiktokStreakSaver.Services"
              xmlns:views="clr-namespace:TiktokStreakSaver.Views"
              x:Class="TiktokStreakSaver.Pages.ProfilePage"
-             Title="Profile"
+             Title="{svc:Tr Prof_Title}"
              Shell.NavBarIsVisible="False"
              Shell.TabBarIsVisible="False"
              NavigationPage.HasNavigationBar="False"
@@ -15,10 +16,10 @@
             <VerticalStackLayout Padding="20" Spacing="16">
 
                 <VerticalStackLayout Spacing="2" Margin="0,8,0,0">
-                    <Label Text="Profile"
+                    <Label Text="{svc:Tr Prof_Title}"
                            Style="{StaticResource PageTitleLabel}"
                            HorizontalOptions="Start"/>
-                    <Label Text="Session &amp; settings"
+                    <Label Text="{svc:Tr Prof_Subtitle}"
                            FontFamily="InterRegular"
                            FontSize="13"
                            TextColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray400}}"
@@ -27,7 +28,7 @@
 
                 <Border Style="{StaticResource SectionCard}">
                     <VerticalStackLayout Spacing="16">
-                        <Label Text="TikTok Account" Style="{StaticResource SectionLabel}"/>
+                        <Label Text="{svc:Tr Prof_TikTokAccount}" Style="{StaticResource SectionLabel}"/>
 
                         <Grid ColumnDefinitions="Auto, *" ColumnSpacing="16">
                             <Border WidthRequest="56" HeightRequest="56"
@@ -57,14 +58,14 @@
                                         StrokeShape="RoundRectangle 16"
                                         BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}">
                                     <Entry x:Name="DisplayNameEntry"
-                                           Placeholder="Your display name"
+                                           Placeholder="{svc:Tr Prof_DisplayName}"
                                            Margin="12,4"
                                            BackgroundColor="Transparent"
                                            Completed="OnDisplayNameChanged"
                                            Unfocused="OnDisplayNameChanged"/>
                                 </Border>
                                 <Label x:Name="DisplayNameHint"
-                                       Text="Photo and name can be changed anytime."
+                                       Text="{svc:Tr Prof_PhotoNote}"
                                        Style="{StaticResource DataLabel}"/>
                             </VerticalStackLayout>
                         </Grid>
@@ -78,7 +79,7 @@
                                     VerticalOptions="Center"/>
                             <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2">
                                 <Label x:Name="SessionStatusLabel"
-                                       Text="Checking..."
+                                       Text="{svc:Tr Prof_Checking}"
                                        Style="{StaticResource ValueLabel}"/>
                                 <Label x:Name="SessionLastCheckLabel"
                                        Text=""
@@ -88,7 +89,7 @@
 
                         <Grid>
                             <Button x:Name="LoginButton"
-                                    Text="Login to TikTok"
+                                    Text="{svc:Tr Prof_LoginToTikTok}"
                                     BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                                     TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
                                     FontFamily="InterSemiBold"
@@ -101,7 +102,7 @@
 
                 <Border Style="{StaticResource SectionCard}">
                     <VerticalStackLayout Spacing="16">
-                        <Label Text="Settings" Style="{StaticResource SectionLabel}"/>
+                        <Label Text="{svc:Tr Prof_Settings}" Style="{StaticResource SectionLabel}"/>
 
                         <!-- iOS: Shortcuts-only scheduling (no in-app alarms) -->
                         <VerticalStackLayout x:Name="IosShortcutsSettingsPanel"
@@ -113,11 +114,11 @@
                                     Stroke="{AppThemeBinding Light=#FCD34D, Dark=#92400E}"
                                     BackgroundColor="{AppThemeBinding Light=#FFFBEB, Dark=#451A03}">
                                 <VerticalStackLayout Spacing="8">
-                                    <Label Text="iOS is experimental"
+                                    <Label Text="{svc:Tr Prof_IosExperimental}"
                                            FontFamily="InterSemiBold"
                                            FontSize="14"
                                            TextColor="{AppThemeBinding Light=#92400E, Dark=#FCD34D}"/>
-                                    <Label Text="Do not rely on iPhone for daily streak protection. Automation requires an unlocked phone — locked-device Shortcuts runs fail. Android is recommended for reliable background streaks."
+                                    <Label Text="{svc:Tr Prof_IosExperimentalBody}"
                                            FontFamily="InterRegular"
                                            FontSize="13"
                                            LineBreakMode="WordWrap"
@@ -125,7 +126,7 @@
                                 </VerticalStackLayout>
                             </Border>
                             <Button x:Name="IosLimitationsButton"
-                                    Text="Why iOS is different"
+                                    Text="{svc:Tr Prof_WhyIosDifferent}"
                                     BackgroundColor="{AppThemeBinding Light={StaticResource PrimarySubtle}, Dark={StaticResource Gray800}}"
                                     TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                                     FontFamily="InterSemiBold"
@@ -138,16 +139,16 @@
                                     Stroke="{AppThemeBinding Light=#BFDBFE, Dark=#1E3A5F}"
                                     BackgroundColor="{AppThemeBinding Light=#EFF6FF, Dark=#0F1A2E}">
                                 <VerticalStackLayout Spacing="8">
-                                    <Label Text="Scheduling on iPhone"
+                                    <Label Text="{svc:Tr Prof_SchedulingOnIphone}"
                                            FontFamily="InterSemiBold"
                                            FontSize="14"
                                            TextColor="{AppThemeBinding Light=#1E40AF, Dark=#93C5FD}"/>
-                                    <Label Text="Streak Saver cannot run on a timer inside the app on iOS. Automations only work through the Shortcuts app (or the home screen widget)."
+                                    <Label Text="{svc:Tr Prof_IosTimerBody}"
                                            FontFamily="InterRegular"
                                            FontSize="13"
                                            LineBreakMode="WordWrap"
                                            TextColor="{AppThemeBinding Light=#1E3A8A, Dark={StaticResource Gray300}}"/>
-                                    <Label Text="Create a daily Shortcut automation, turn off Ask Before Running, and pick a time each day when your iPhone is usually unlocked. The app will come to the foreground briefly while streak messages send — iOS does not allow locked-phone or silent WebView automation."
+                                    <Label Text="{svc:Tr Prof_IosShortcutHowTo}"
                                            FontFamily="InterRegular"
                                            FontSize="13"
                                            LineBreakMode="WordWrap"
@@ -155,7 +156,7 @@
                                 </VerticalStackLayout>
                             </Border>
                             <Button x:Name="ShortcutTutorialButton"
-                                    Text="Shortcut setup guide"
+                                    Text="{svc:Tr Prof_ShortcutGuide}"
                                     BackgroundColor="{AppThemeBinding Light={StaticResource PrimarySubtle}, Dark={StaticResource Gray800}}"
                                     TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                                     FontFamily="InterSemiBold"
@@ -168,8 +169,8 @@
                         <VerticalStackLayout x:Name="SharedRunSettingsPanel" Spacing="16">
                             <Grid ColumnDefinitions="*, Auto" ColumnSpacing="16">
                                 <VerticalStackLayout VerticalOptions="Center" Spacing="4">
-                                    <Label Text="Skip Unreachable" Style="{StaticResource ControlTitleLabel}"/>
-                                    <Label Text="Continue to remaining users when one is not found" Style="{StaticResource DataLabel}" LineBreakMode="WordWrap"/>
+                                    <Label Text="{svc:Tr Prof_SkipUnreachable}" Style="{StaticResource ControlTitleLabel}"/>
+                                    <Label Text="{svc:Tr Prof_SkipUnreachableBody}" Style="{StaticResource DataLabel}" LineBreakMode="WordWrap"/>
                                 </VerticalStackLayout>
                                 <Switch x:Name="SkipUnreachableSwitch"
                                         Grid.Column="1"
@@ -179,8 +180,8 @@
 
                             <Grid ColumnDefinitions="*, Auto" ColumnSpacing="16">
                                 <VerticalStackLayout VerticalOptions="Center" Spacing="4">
-                                    <Label Text="Randomize Messages" Style="{StaticResource ControlTitleLabel}"/>
-                                    <Label Text="Send a unique built-in streak message to each friend" Style="{StaticResource DataLabel}" LineBreakMode="WordWrap"/>
+                                    <Label Text="{svc:Tr Prof_Randomize}" Style="{StaticResource ControlTitleLabel}"/>
+                                    <Label Text="{svc:Tr Prof_RandomizeBody}" Style="{StaticResource DataLabel}" LineBreakMode="WordWrap"/>
                                 </VerticalStackLayout>
                                 <Switch x:Name="RandomizeMessagesSwitch"
                                         Grid.Column="1"
@@ -193,8 +194,8 @@
                         <VerticalStackLayout x:Name="AndroidSchedulingPanel" Spacing="16">
                         <Grid ColumnDefinitions="*, Auto" ColumnSpacing="16">
                             <VerticalStackLayout VerticalOptions="Center" Spacing="4">
-                                <Label x:Name="ScheduleTitleLabel" Text="Background Automation" Style="{StaticResource ControlTitleLabel}"/>
-                                <Label x:Name="ScheduleSubtitleLabel" Text="Keep streaks alive automatically" Style="{StaticResource DataLabel}" LineBreakMode="WordWrap"/>
+                                <Label x:Name="ScheduleTitleLabel" Text="{svc:Tr Prof_BackgroundAutomation}" Style="{StaticResource ControlTitleLabel}"/>
+                                <Label x:Name="ScheduleSubtitleLabel" Text="{svc:Tr Prof_BackgroundAutomationBody}" Style="{StaticResource DataLabel}" LineBreakMode="WordWrap"/>
                             </VerticalStackLayout>
                             <Switch x:Name="ScheduleSwitch"
                                     Grid.Column="1"
@@ -206,8 +207,8 @@
                         <VerticalStackLayout x:Name="ScheduleOptionsPanel" IsVisible="False" Spacing="12">
                             <Grid ColumnDefinitions="*, Auto" ColumnSpacing="16">
                                 <VerticalStackLayout VerticalOptions="Center" Spacing="4">
-                                    <Label Text="Daily Schedule" Style="{StaticResource ControlTitleLabel}"/>
-                                    <Label Text="Run at the same time every day instead of every N hours" Style="{StaticResource DataLabel}" LineBreakMode="WordWrap"/>
+                                    <Label Text="{svc:Tr Prof_DailySchedule}" Style="{StaticResource ControlTitleLabel}"/>
+                                    <Label Text="{svc:Tr Prof_DailyScheduleBody}" Style="{StaticResource DataLabel}" LineBreakMode="WordWrap"/>
                                 </VerticalStackLayout>
                                 <Switch x:Name="FixedTimeSwitch"
                                         Grid.Column="1"
@@ -217,7 +218,7 @@
 
                             <VerticalStackLayout x:Name="TimePickerRow" IsVisible="False" Spacing="10">
                                 <Grid ColumnDefinitions="*, Auto" ColumnSpacing="12">
-                                    <Label Text="Run at" VerticalOptions="Center"
+                                    <Label Text="{svc:Tr Prof_RunAt}" VerticalOptions="Center"
                                            Style="{StaticResource ControlTitleLabel}"/>
                                     <TimePicker x:Name="ScheduleTimePicker"
                                                 Grid.Column="1"
@@ -231,7 +232,7 @@
                                 <VerticalStackLayout x:Name="ScheduleTimesList" Spacing="6"/>
 
                                 <Button x:Name="AddScheduleTimeButton"
-                                        Text="+ Add another time"
+                                        Text="{svc:Tr Prof_AddAnotherTime}"
                                         HorizontalOptions="Start"
                                         BackgroundColor="{AppThemeBinding Light={StaticResource PrimarySubtle}, Dark={StaticResource Gray800}}"
                                         TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
@@ -243,7 +244,7 @@
                                         Clicked="OnAddScheduleTimeClicked"/>
 
                                 <Label x:Name="ScheduleTimesHint"
-                                       Text="Add more times to run the automation several times a day."
+                                       Text="{svc:Tr Prof_ScheduleTimesHint}"
                                        Style="{StaticResource DataLabel}"
                                        LineBreakMode="WordWrap"/>
                             </VerticalStackLayout>
@@ -253,9 +254,9 @@
                         <VerticalStackLayout x:Name="IntervalPanel" Spacing="8">
                             <Grid ColumnDefinitions="*, Auto, Auto" ColumnSpacing="12">
                                 <VerticalStackLayout VerticalOptions="Center" Spacing="4">
-                                    <Label Text="Run Interval" Style="{StaticResource ControlTitleLabel}"/>
+                                    <Label Text="{svc:Tr Prof_RunInterval}" Style="{StaticResource ControlTitleLabel}"/>
                                     <Label x:Name="IntervalSummaryLabel"
-                                           Text="Every 23 hours between automatic runs."
+                                           Text="{svc:Tr Prof_IntervalSummaryFixed}"
                                            Style="{StaticResource DataLabel}"
                                            LineBreakMode="WordWrap"/>
                                 </VerticalStackLayout>
@@ -280,8 +281,8 @@
 
                         <Grid x:Name="BatteryLowRow" ColumnDefinitions="*, Auto" ColumnSpacing="16">
                             <VerticalStackLayout VerticalOptions="Center" Spacing="4">
-                                <Label Text="Send streaks if battery is running low" Style="{StaticResource ControlTitleLabel}"/>
-                                <Label Text="Anticipate today's run when the system battery-low warning fires" Style="{StaticResource DataLabel}" LineBreakMode="WordWrap"/>
+                                <Label Text="{svc:Tr Prof_BatteryLow}" Style="{StaticResource ControlTitleLabel}"/>
+                                <Label Text="{svc:Tr Prof_BatteryLowBody}" Style="{StaticResource DataLabel}" LineBreakMode="WordWrap"/>
                             </VerticalStackLayout>
                             <Switch x:Name="SendOnBatteryLowSwitch"
                                     Grid.Column="1"
@@ -291,8 +292,8 @@
 
                         <Grid x:Name="StreakRiskRow" ColumnDefinitions="*, Auto" ColumnSpacing="16">
                             <VerticalStackLayout VerticalOptions="Center" Spacing="4">
-                                <Label Text="Streak risk alerts" Style="{StaticResource ControlTitleLabel}"/>
-                                <Label Text="Warn me if friends still have no message late in the day" Style="{StaticResource DataLabel}" LineBreakMode="WordWrap"/>
+                                <Label Text="{svc:Tr Prof_StreakRisk}" Style="{StaticResource ControlTitleLabel}"/>
+                                <Label Text="{svc:Tr Prof_StreakRiskBody}" Style="{StaticResource DataLabel}" LineBreakMode="WordWrap"/>
                             </VerticalStackLayout>
                             <Switch x:Name="StreakRiskSwitch"
                                     Grid.Column="1"
@@ -301,7 +302,7 @@
                         </Grid>
 
                         <Grid x:Name="StreakRiskTimeRow" ColumnDefinitions="*, Auto" ColumnSpacing="16" IsVisible="False">
-                            <Label Text="Warn me after" VerticalOptions="Center"
+                            <Label Text="{svc:Tr Prof_WarnMeAfter}" VerticalOptions="Center"
                                    Style="{StaticResource ControlTitleLabel}"/>
                             <TimePicker x:Name="StreakRiskTimePicker"
                                         Grid.Column="1"
@@ -312,8 +313,8 @@
 
                         <Grid x:Name="DryRunRow" ColumnDefinitions="*, Auto" ColumnSpacing="16">
                             <VerticalStackLayout VerticalOptions="Center" Spacing="4">
-                                <Label Text="Test run (send nothing)" Style="{StaticResource ControlTitleLabel}"/>
-                                <Label Text="Walks every friend to check the chat is reachable, without sending. Test runs never count as sent." Style="{StaticResource DataLabel}" LineBreakMode="WordWrap"/>
+                                <Label Text="{svc:Tr Prof_DryRun}" Style="{StaticResource ControlTitleLabel}"/>
+                                <Label Text="{svc:Tr Prof_DryRunBody}" Style="{StaticResource DataLabel}" LineBreakMode="WordWrap"/>
                             </VerticalStackLayout>
                             <Switch x:Name="DryRunSwitch"
                                     Grid.Column="1"
@@ -326,33 +327,33 @@
 
                 <Border Style="{StaticResource SectionCard}">
                     <VerticalStackLayout Spacing="8">
-                        <Label Text="About" Style="{StaticResource SectionLabel}"/>
+                        <Label Text="{svc:Tr Prof_About}" Style="{StaticResource SectionLabel}"/>
                         <Grid ColumnDefinitions="*, Auto">
                             <VerticalStackLayout VerticalOptions="Center" Spacing="2">
-                                <Label Text="Streak Saver" Style="{StaticResource ValueLabel}"/>
+                                <Label Text="{svc:Tr App_Name}" Style="{StaticResource ValueLabel}"/>
                                 <Label x:Name="VersionLabel"
                                        Text="v1.0.0"
                                        Style="{StaticResource DataLabel}"/>
                             </VerticalStackLayout>
                             <Button Grid.Column="1"
-                                    Text="View Details"
+                                    Text="{svc:Tr Prof_ViewDetails}"
                                     Style="{StaticResource TextButton}"
                                     Clicked="OnAboutClicked"/>
                         </Grid>
                         <Label x:Name="AltStoreUpdatesLabel"
-                               Text="Updates are installed through AltStore."
+                               Text="{svc:Tr Prof_AltStoreUpdates}"
                                Style="{StaticResource DataLabel}"
                                IsVisible="False"
                                LineBreakMode="WordWrap"/>
                         <Button x:Name="CheckUpdatesButton"
-                                Text="Check for updates"
+                                Text="{svc:Tr Prof_CheckUpdates}"
                                 BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray800}}"
                                 TextColor="{AppThemeBinding Light={StaticResource Gray900}, Dark={StaticResource White}}"
                                 CornerRadius="14"
                                 HeightRequest="44"
                                 Clicked="OnCheckUpdatesClicked"/>
                         <Button x:Name="PrivacyPolicyButton"
-                                Text="Privacy Policy"
+                                Text="{svc:Tr Prof_PrivacyPolicy}"
                                 BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray800}}"
                                 TextColor="{AppThemeBinding Light={StaticResource Gray900}, Dark={StaticResource White}}"
                                 CornerRadius="14"
@@ -369,21 +370,21 @@
                 <Border Style="{StaticResource SectionCard}">
                     <VerticalStackLayout Spacing="12">
                         <VerticalStackLayout Spacing="2">
-                            <Label Text="Backup &amp; Restore" Style="{StaticResource SectionLabel}"/>
-                            <Label Text="Saves your friends, groups, custom messages, schedule and history into a file you keep. Restore it after reinstalling or on a new phone. The TikTok login is not included, so you sign in again afterwards."
+                            <Label Text="{svc:Tr Prof_BackupRestore}" Style="{StaticResource SectionLabel}"/>
+                            <Label Text="{svc:Tr Prof_BackupBody}"
                                    Style="{StaticResource DataLabel}"
                                    LineBreakMode="WordWrap"/>
                         </VerticalStackLayout>
 
                         <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-                            <Button Text="Back up"
+                            <Button Text="{svc:Tr Prof_BackUp}"
                                     BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                                     TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"
                                     CornerRadius="14"
                                     HeightRequest="44"
                                     Clicked="OnBackupClicked"/>
                             <Button Grid.Column="1"
-                                    Text="Restore"
+                                    Text="{svc:Tr Prof_Restore}"
                                     BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray800}}"
                                     TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray300}}"
                                     CornerRadius="14"
@@ -400,10 +401,34 @@
                     </VerticalStackLayout>
                 </Border>
 
+                <!--
+                    Language. A plain picker rather than the segmented control the Friends page uses: this
+                    is a settings row, and two options do not need a custom control. English stays the
+                    default, so an existing install shows no change until the user asks for one.
+                -->
                 <Border Style="{StaticResource SectionCard}">
                     <VerticalStackLayout Spacing="12">
-                        <Label Text="Data" Style="{StaticResource SectionLabel}"/>
-                        <Button Text="Logout / Clear Session"
+                        <Label Text="{svc:Tr Prof_Language}" Style="{StaticResource SectionLabel}"/>
+                        <Grid ColumnDefinitions="*, Auto" ColumnSpacing="16">
+                            <VerticalStackLayout VerticalOptions="Center" Spacing="4">
+                                <Label Text="{svc:Tr Prof_LanguageRow}" Style="{StaticResource ControlTitleLabel}"/>
+                                <Label Text="{svc:Tr Prof_LanguageBody}"
+                                       Style="{StaticResource DataLabel}"
+                                       LineBreakMode="WordWrap"/>
+                            </VerticalStackLayout>
+                            <Picker x:Name="LanguagePicker"
+                                    Grid.Column="1"
+                                    WidthRequest="150"
+                                    VerticalOptions="Center"
+                                    SelectedIndexChanged="OnLanguageChanged"/>
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Border Style="{StaticResource SectionCard}">
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="{svc:Tr Prof_Data}" Style="{StaticResource SectionLabel}"/>
+                        <Button Text="{svc:Tr Prof_Logout}"
                                 BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray800}}"
                                 TextColor="{AppThemeBinding Light={StaticResource DeleteColor}, Dark={StaticResource DeleteColor}}"
                                 CornerRadius="14"

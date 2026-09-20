@@ -74,8 +74,8 @@ namespace TiktokStreakSaver
             if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
             {
                 var channelId = "streak_service_channel";
-                var channelName = "Streak Service";
-                var channelDescription = "Notifications for TikTok streak automation";
+                var channelName = Localization.T("Android_StreakChannelName");
+                var channelDescription = Localization.T("Android_ChannelDesc");
                 var importance = NotificationImportance.Low;
                 
                 var channel = new NotificationChannel(channelId, channelName, importance)

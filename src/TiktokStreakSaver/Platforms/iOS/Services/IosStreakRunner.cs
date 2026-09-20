@@ -19,7 +19,7 @@ public static class IosStreakRunner
     public static async Task<IosRunResult> RunNowAsync(bool manual = false)
     {
         if (_isRunning)
-            return new IosRunResult(IosRunStatus.AlreadyRunning, "A streak run is already in progress.", 0, 0);
+            return new IosRunResult(IosRunStatus.AlreadyRunning, Localization.T("Ios_AlreadyRunning"), 0, 0);
 
         _isRunning = true;
         var settings = new SettingsService();
@@ -50,7 +50,7 @@ public static class IosStreakRunner
             IosManualRunFlags.SetForceManualRun(false);
             return new IosRunResult(
                 IosRunStatus.EngineMissing,
-                "Native streak engine is not available on this build. Rebuild the iOS app on macOS so StreakEngine.xcframework is embedded.",
+                Localization.T("Ios_EngineMissing"),
                 0,
                 0);
         }
@@ -91,7 +91,7 @@ public static class IosStreakRunner
         var reason = AppStorageProvider.Current.GetString(AppConstants.LastRunFailureReasonKey, string.Empty);
         var logTail = IosRunLogStore.GetRecentLines(8);
         var errorMessage = string.IsNullOrWhiteSpace(reason)
-            ? "Streak run failed with no native history recorded."
+            ? Localization.T("Ios_FailedNoHistory")
             : reason;
 
         if (logTail.Count > 0)
@@ -120,14 +120,14 @@ public static class IosStreakRunner
             {
                 return new IosRunResult(
                     IosRunStatus.NoFriendsDue,
-                    "No friends are due for a streak message today.",
+                    Localization.T("Ios_NoFriendsDue"),
                     0,
                     0);
             }
 
             var completedMessage = sent > 0
-                ? $"Sent {sent} of {total} message{(total != 1 ? "s" : "")}."
-                : "Run finished.";
+                ? string.Format(Localization.T(total == 1 ? "Ios_SentOne" : "Ios_SentMany"), sent, total)
+                : Localization.T("Ios_RunFinished");
             return new IosRunResult(IosRunStatus.Completed, completedMessage, sent, total);
         }
 
@@ -138,7 +138,7 @@ public static class IosStreakRunner
         {
             return new IosRunResult(
                 IosRunStatus.Failed,
-                "Native streak runner exited immediately with no logs. Rebuild the app so StreakEngine.xcframework is embedded.",
+                Localization.T("Ios_EngineExitedNoLogs"),
                 sent,
                 total,
                 details);
@@ -146,14 +146,14 @@ public static class IosStreakRunner
 
         var (status, message) = reason switch
         {
-            "no_network" => (IosRunStatus.Offline, "No network connection."),
-            "no_cookies" => (IosRunStatus.NoCookies, "TikTok session cookies are missing. Sign in again."),
-            "login_required" => (IosRunStatus.NoCookies, "TikTok login required. Sign in again."),
-            "no_friends_due" => (IosRunStatus.NoFriendsDue, "No friends are due for a streak message today."),
-            "timed_out" => (IosRunStatus.TimedOut, "The streak run timed out. Try again."),
-            "scene_not_ready" => (IosRunStatus.Failed, "The app window was not ready. Open Streak Saver and try again."),
-            "script_missing" => (IosRunStatus.Failed, "Automation script missing from the app bundle."),
-            "navigation_failed" => (IosRunStatus.Failed, "Could not load TikTok messages."),
+            "no_network" => (IosRunStatus.Offline, Localization.T("Ios_NoNetwork")),
+            "no_cookies" => (IosRunStatus.NoCookies, Localization.T("Ios_NoCookies")),
+            "login_required" => (IosRunStatus.NoCookies, Localization.T("Ios_LoginRequired")),
+            "no_friends_due" => (IosRunStatus.NoFriendsDue, Localization.T("Ios_NoFriendsDue")),
+            "timed_out" => (IosRunStatus.TimedOut, Localization.T("Ios_TimedOut")),
+            "scene_not_ready" => (IosRunStatus.Failed, Localization.T("Ios_SceneNotReady")),
+            "script_missing" => (IosRunStatus.Failed, Localization.T("Ios_ScriptMissing")),
+            "navigation_failed" => (IosRunStatus.Failed, Localization.T("Ios_NavigationFailed")),
             "send_error" => (IosRunStatus.Failed, BuildSendErrorMessage(latest)),
             _ => (IosRunStatus.Failed, ResolveGenericFailureMessage(reason, latest))
         };
@@ -165,12 +165,12 @@ public static class IosStreakRunner
     {
         var friendErrors = GetFriendErrorSummary(latest, maxEntries: 2);
         if (!string.IsNullOrWhiteSpace(friendErrors))
-            return $"Could not send to any friends. {friendErrors}";
+            return string.Format(Localization.T("Ios_SendFailedWithDetails"), friendErrors);
 
         if (!string.IsNullOrWhiteSpace(latest?.ErrorMessage))
             return latest.ErrorMessage;
 
-        return "Could not send to any friends.";
+        return Localization.T("Ios_SendFailed");
     }
 
     private static string ResolveGenericFailureMessage(string reason, StreakRunResult? latest)
@@ -185,7 +185,7 @@ public static class IosStreakRunner
         if (!string.IsNullOrWhiteSpace(friendErrors))
             return friendErrors;
 
-        return "Streak run failed.";
+        return Localization.T("Ios_RunFailed");
     }
 
     private static string? BuildDiagnosticDetails(StreakRunResult? latest)
@@ -216,7 +216,7 @@ public static class IosStreakRunner
             .Take(maxEntries)
             .Select(r =>
             {
-                var detail = string.IsNullOrWhiteSpace(r.ErrorMessage) ? "failed" : r.ErrorMessage;
+                var detail = string.IsNullOrWhiteSpace(r.ErrorMessage) ? Localization.T("Ios_FailedShort") : r.ErrorMessage;
                 return $"@{r.Username}: {detail}";
             })
             .ToList();
@@ -227,7 +227,7 @@ public static class IosStreakRunner
         var summary = string.Join("; ", failed);
         var remaining = latest.FriendResults.Count(r => !r.Success) - failed.Count;
         if (remaining > 0)
-            summary += $" (+{remaining} more)";
+            summary += string.Format(Localization.T("Ios_MoreFailures"), remaining);
 
         return summary;
     }

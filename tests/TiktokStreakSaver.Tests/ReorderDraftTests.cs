@@ -117,15 +117,19 @@ public class ReorderDraftTests
     }
 
     [Fact]
-    public void AGroupCannotBeDroppedOnAFriend()
+    public void AFriendCanBeDroppedOnAGroup()
     {
+        // The saved list is one sequence, so moving a friend past a group is a real change to the send
+        // order and the draft has to record it. This used to be refused, which left the order between the
+        // two kinds impossible to arrange.
         var draft = ReorderDraft.Begin(new List<FriendConfig>
         {
             Entry("f"), Entry("g", isGroup: true)
         });
 
-        Assert.False(draft.Move("f", "g"));
-        Assert.False(draft.HasChanges);
+        Assert.True(draft.Move("f", "g"));
+        Assert.True(draft.HasChanges);
+        Assert.Equal(new[] { "g", "f" }, draft.Entries.Select(e => e.Id).ToArray());
     }
 
     [Fact]

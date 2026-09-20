@@ -105,7 +105,7 @@ public static class ContactScanReader
 
         if (string.IsNullOrWhiteSpace(json))
         {
-            error = "No scan data yet.";
+            error = AppStrings.T("Scan_NoDataYet");
             return false;
         }
 
@@ -115,13 +115,13 @@ public static class ContactScanReader
         }
         catch (JsonException)
         {
-            error = "The scan data could not be read.";
+            error = AppStrings.T("Scan_DataUnreadable");
             return false;
         }
 
         if (scan is null)
         {
-            error = "The scan data could not be read.";
+            error = AppStrings.T("Scan_DataUnreadable");
             return false;
         }
 
@@ -144,7 +144,7 @@ public static class ContactScanReader
     public static string DescribeEmptyScan(ContactScanDto? scan)
     {
         if (scan is null)
-            return "The reader never reached TikTok's inbox, so nothing could be read.";
+            return AppStrings.T("Scan_NeverReachedInbox");
 
         var lastStep = scan.Log.Count > 0 ? scan.Log[^1] : null;
 
@@ -153,25 +153,23 @@ public static class ContactScanReader
         // never loaded at all - which is a different problem with a different fix.
         if (WebViewNavigationPolicy.IsBlank(scan.Url))
         {
-            return "The reader ran on a page that was still blank, so TikTok's inbox never actually loaded. "
-                 + "That is usually the connection rather than your account — check it, then try again.";
+            return AppStrings.T("Scan_BlankPage") + " " + AppStrings.T("Scan_BlankPageHint");
         }
 
         // A page that is not the inbox means the scan was looking in the wrong place entirely, which
         // is worth saying plainly rather than reporting as an empty list.
         if (scan.Url.Length > 0 && !scan.Url.Contains("/messages", StringComparison.OrdinalIgnoreCase))
         {
-            return $"TikTok did not stay on the inbox — it ended up at {scan.Url}. "
-                 + "If that is a sign-in page, sign in again from the Profile page and retry.";
+            return string.Format(AppStrings.T("Scan_WrongPage"), scan.Url) + " " + AppStrings.T("Scan_WrongPageHint");
         }
 
         if (scan.Attempts == 0)
-            return "The reader started but never managed to inspect the page.";
+            return AppStrings.T("Scan_NeverInspected");
 
-        return "TikTok's inbox was opened but no conversation rows could be read from it. "
-             + $"Steps taken: {scan.Attempts}."
-             + (string.IsNullOrWhiteSpace(lastStep) ? string.Empty : $" Last step: {lastStep}")
-             + (string.IsNullOrWhiteSpace(scan.UserAgent) ? string.Empty : $" Client: {Shorten(scan.UserAgent)}");
+        return AppStrings.T("Scan_NoRowsRead") + " "
+             + string.Format(AppStrings.T("Scan_StepsTaken"), scan.Attempts)
+             + (string.IsNullOrWhiteSpace(lastStep) ? string.Empty : " " + string.Format(AppStrings.T("Scan_LastStep"), lastStep))
+             + (string.IsNullOrWhiteSpace(scan.UserAgent) ? string.Empty : " " + string.Format(AppStrings.T("Scan_Client"), Shorten(scan.UserAgent)));
     }
 
     /// <summary>The browser name at the front of a user agent, which is the part that matters here.</summary>

@@ -79,13 +79,13 @@ public static class StreakRiskEvaluator
     private static string BuildSummary(int pending, int total, int hoursLeft)
     {
         var who = pending == total
-            ? $"All {total} friends"
-            : $"{pending} of {total} friends";
+            ? string.Format(AppStrings.T("Risk_AllFriends"), total)
+            : string.Format(AppStrings.T("Risk_SomeFriends"), pending, total);
 
         if (hoursLeft <= 0)
-            return $"{who} still need a message today. The day is almost over.";
+            return string.Format(AppStrings.T("Risk_DayAlmostOver"), who);
 
-        var time = hoursLeft == 1 ? "1 hour" : $"{hoursLeft} hours";
-        return $"{who} still need a message today - about {time} left.";
+        var time = hoursLeft == 1 ? AppStrings.T("Risk_OneHour") : string.Format(AppStrings.T("Risk_Hours"), hoursLeft);
+        return string.Format(AppStrings.T("Risk_Summary"), who, time);
     }
 }

@@ -38,7 +38,7 @@ public static class ContactEditRules
         error = null;
         if (entry is null)
         {
-            error = "There is nothing to correct.";
+            error = AppStrings.T("Imp_NothingToCorrect");
             return false;
         }
 
@@ -46,19 +46,19 @@ public static class ContactEditRules
 
         if (username.Length == 0)
         {
-            error = "Enter the TikTok username, without the @.";
+            error = AppStrings.T("Imp_EnterUsernamePlain");
             return false;
         }
 
         if (username.Length > MaxUsernameLength)
         {
-            error = $"A username is at most {MaxUsernameLength} characters.";
+            error = string.Format(AppStrings.T("Imp_UsernameTooLong"), MaxUsernameLength);
             return false;
         }
 
         if (username.Any(c => char.IsWhiteSpace(c) || c == '@' || c == '/'))
         {
-            error = "A username cannot contain spaces, @ or /.";
+            error = AppStrings.T("Imp_UsernameInvalid");
             return false;
         }
 
@@ -74,7 +74,7 @@ public static class ContactEditRules
         error = null;
         if (entry is null)
         {
-            error = "There is nothing to correct.";
+            error = AppStrings.T("Imp_NothingToCorrect");
             return false;
         }
 
@@ -83,14 +83,14 @@ public static class ContactEditRules
         if (name.Length == 0)
         {
             error = entry.IsGroup
-                ? "A group needs the name shown in its chat header."
-                : "Enter the name to show for this contact.";
+                ? AppStrings.T("Imp_GroupNeedsName")
+                : AppStrings.T("Imp_EnterContactName");
             return false;
         }
 
         if (name.Length > MaxNameLength)
         {
-            error = $"A name is at most {MaxNameLength} characters.";
+            error = string.Format(AppStrings.T("Imp_NameTooLong"), MaxNameLength);
             return false;
         }
 
@@ -158,10 +158,10 @@ public sealed class ImportDraftEntry
         get
         {
             if (Entry.IsGroup)
-                return "Group chat";
+                return AppStrings.T("Imp_GroupChat");
 
             var username = (Entry.Username ?? string.Empty).Trim();
-            return username.Length > 0 ? "@" + username : "Person · needs a username";
+            return username.Length > 0 ? "@" + username : AppStrings.T("Imp_PersonNeedsUsername");
         }
     }
 
@@ -231,11 +231,11 @@ public sealed class ImportDraft
         var groups = _entries.Count(entry => entry.Include && entry.Entry.IsGroup);
 
         var parts = new List<string>();
-        if (people > 0) parts.Add(people == 1 ? "1 person" : $"{people} people");
-        if (groups > 0) parts.Add(groups == 1 ? "1 group" : $"{groups} groups");
+        if (people > 0) parts.Add(people == 1 ? AppStrings.T("Imp_OnePerson") : string.Format(AppStrings.T("Imp_People"), people));
+        if (groups > 0) parts.Add(groups == 1 ? AppStrings.T("Imp_OneGroup") : string.Format(AppStrings.T("Imp_Groups"), groups));
 
-        var selected = parts.Count > 0 ? string.Join(" and ", parts) : "none";
-        return $"{selected} selected of {_entries.Count}";
+        var selected = parts.Count > 0 ? string.Join(AppStrings.T("Imp_JoinAnd"), parts) : AppStrings.T("Imp_None");
+        return string.Format(AppStrings.T("Imp_SelectedOf"), selected, _entries.Count);
     }
 
     /// <summary>
@@ -251,13 +251,13 @@ public sealed class ImportDraft
         if (blocked.Count == 0)
             return null;
 
-        var names = blocked.Select(entry => entry.Title.Length > 0 ? entry.Title : "(unnamed)").ToList();
+        var names = blocked.Select(entry => entry.Title.Length > 0 ? entry.Title : AppStrings.T("Imp_Unnamed")).ToList();
         var which = names.Count == 1 ? names[0] : string.Join(", ", names.Take(3))
-            + (names.Count > 3 ? $" and {names.Count - 3} more" : string.Empty);
+            + (names.Count > 3 ? string.Format(AppStrings.T("Imp_AndMore"), names.Count - 3) : string.Empty);
 
         return blocked.Count == 1
-            ? $"{which} needs a username before it can be added."
-            : $"{which} need a username before they can be added.";
+            ? string.Format(AppStrings.T("Imp_NeedsUsername"), which)
+            : string.Format(AppStrings.T("Imp_NeedUsername"), which);
     }
 }
 

@@ -38,7 +38,7 @@ public class SessionService
 #if IOS
         if (!Platforms.iOS.Services.IosSessionFileStorage.WriteValid(valid, ticks))
         {
-            error = "Session state did not persist on this device.";
+            error = AppStrings.T("Common_SessionNotPersisted");
             System.Diagnostics.Debug.WriteLine($"TrySetSessionValid file write failed for valid={valid}");
             return false;
         }
@@ -50,7 +50,7 @@ public class SessionService
 #endif
            )
         {
-            error = "Session state did not persist on this device.";
+            error = AppStrings.T("Common_SessionNotPersisted");
             System.Diagnostics.Debug.WriteLine($"TrySetSessionValid read-back failed for valid={valid}");
             return false;
         }

@@ -13,6 +13,8 @@ public partial class ProfilePage : ContentPage
     private bool _suppressRandomizeToggle = false;
     private bool _suppressScheduleTimeChanged = false;
     private bool _suppressStreakRiskTimeChanged = false;
+    /// <summary>Set while the language picker is being filled, so selecting an item does not look like a change.</summary>
+    private bool _suppressLanguageChanged = false;
 #if ANDROID
     private readonly UpdateService _updateService;
     private bool _isCheckingUpdates = false;
@@ -27,6 +29,56 @@ public partial class ProfilePage : ContentPage
 #if ANDROID
         _updateService = new UpdateService();
 #endif
+        BuildLanguagePicker();
+    }
+
+    /// <summary>
+    /// Fills the language picker and selects the language in use.
+    /// </summary>
+    /// <remarks>
+    /// Built from <see cref="AppLanguage"/> rather than written into the XAML, so the two options and the
+    /// code that reads the selection cannot drift apart. The guard is needed because setting
+    /// <c>SelectedIndex</c> raises the change handler, and that would write the same language back.
+    /// </remarks>
+    private void BuildLanguagePicker()
+    {
+        _suppressLanguageChanged = true;
+
+        LanguagePicker.ItemsSource = new List<string>
+        {
+            Localization.T("Prof_LanguageEnglish"),
+            Localization.T("Prof_LanguageIndonesian")
+        };
+
+        LanguagePicker.SelectedIndex = Localization.Current.Language == AppLanguage.Indonesian ? 1 : 0;
+
+        _suppressLanguageChanged = false;
+    }
+
+    /// <summary>
+    /// Applies the chosen language.
+    /// </summary>
+    /// <remarks>
+    /// The visible screen redraws by itself: every translated label is bound to the localization indexer,
+    /// which raises a change notification. What is left here is the text this page set in code - the
+    /// greeting, the schedule summary, the version line - so the page is reloaded from storage to repaint
+    /// those as well.
+    /// </remarks>
+    private void OnLanguageChanged(object? sender, EventArgs e)
+    {
+        if (_suppressLanguageChanged)
+            return;
+
+        var chosen = LanguagePicker.SelectedIndex == 1 ? AppLanguage.Indonesian : AppLanguage.English;
+        if (chosen == Localization.Current.Language)
+            return;
+
+        Localization.Current.SetLanguage(chosen);
+
+        // The picker's own two options are language names, so they are rebuilt in the new language.
+        BuildLanguagePicker();
+
+        LoadSettingsFromStorage();
     }
 
     private void OnSessionStateChanged(object? sender, EventArgs e)
@@ -180,7 +232,7 @@ public partial class ProfilePage : ContentPage
         {
             var result = await MediaPicker.Default.PickPhotoAsync(new MediaPickerOptions
             {
-                Title = "Please pick a photo"
+                Title = Localization.T("Prof_PickPhoto")
             });
 
             if (result != null)
@@ -202,7 +254,9 @@ public partial class ProfilePage : ContentPage
         }
         catch (Exception ex)
         {
-            await DisplayAlert("Photo", $"Could not pick photo: {ex.Message}", "OK");
+            await DisplayAlert(Localization.T("Prof_PhotoTitle"),
+                string.Format(Localization.T("Prof_CouldNotPickPhoto"), ex.Message),
+                Localization.T("Common_OK"));
         }
     }
 
@@ -223,22 +277,24 @@ public partial class ProfilePage : ContentPage
 
         if (isSessionValid)
         {
-            LoginButton.Text = "Session OK";
+            LoginButton.Text = Localization.T("Prof_SessionOk");
             LoginButton.BackgroundColor = GetThemeColor("Success", "#22946E");
             LoginButton.IsEnabled = false;
             SessionDot.BackgroundColor = GetThemeColor("Success", "#22946E");
-            SessionStatusLabel.Text = "Session active";
+            SessionStatusLabel.Text = Localization.T("Prof_SessionActive");
             var lastCheck = _sessionService.GetLastCheckTime();
-            SessionLastCheckLabel.Text = lastCheck.HasValue ? $"Verified {lastCheck.Value:MMM dd, HH:mm}" : "";
+            SessionLastCheckLabel.Text = lastCheck.HasValue
+                ? string.Format(Localization.T("Prof_Verified"), lastCheck.Value.ToString("MMM dd, HH:mm"))
+                : "";
         }
         else
         {
-            LoginButton.Text = "Login to TikTok";
+            LoginButton.Text = Localization.T("Prof_LoginToTikTok");
             LoginButton.BackgroundColor = GetThemeColor("Primary", "#FE2C55");
             LoginButton.IsEnabled = true;
             SessionDot.BackgroundColor = GetThemeColor("Error", "#9C2121");
-            SessionStatusLabel.Text = "Not logged in";
-            SessionLastCheckLabel.Text = "Tap below to login";
+            SessionStatusLabel.Text = Localization.T("Prof_NotLoggedIn");
+            SessionLastCheckLabel.Text = Localization.T("Prof_TapBelowToLogin");
         }
 
         await LoginButton.FadeTo(1.0, 200);
@@ -317,7 +373,7 @@ public partial class ProfilePage : ContentPage
 
         if (next is null)
         {
-            ScheduleTimesHint.Text = "All 24 hours are already scheduled.";
+            ScheduleTimesHint.Text = Localization.T("Prof_AllHoursScheduled");
             return;
         }
 
@@ -345,7 +401,7 @@ public partial class ProfilePage : ContentPage
         var times = _settingsService.GetFixedDailyTimes();
 
         ScheduleTimesList.Children.Clear();
-        ScheduleTimesHint.Text = "Add more times to run the automation several times a day.";
+        ScheduleTimesHint.Text = Localization.T("Prof_ScheduleTimesHint");
 
         // Only the extra times are listed: the first one is edited by the "Run at" picker above.
         // Each row carries its own picker so editing an existing entry is unambiguous - the previous
@@ -357,7 +413,7 @@ public partial class ProfilePage : ContentPage
 
             var label = new Label
             {
-                Text = "Also at",
+                Text = Localization.T("Prof_AlsoAt"),
                 FontFamily = "InterMedium",
                 FontSize = 14,
                 VerticalOptions = LayoutOptions.Center,
@@ -487,8 +543,8 @@ public partial class ProfilePage : ContentPage
         var hours = _settingsService.GetIntervalHours();
         IntervalHoursValueLabel.Text = hours.ToString();
         IntervalSummaryLabel.Text = hours == 1
-            ? "Every hour between automatic runs."
-            : $"Every {hours} hours between automatic runs.";
+            ? Localization.T("Prof_IntervalHour")
+            : string.Format(Localization.T("Prof_IntervalSummary"), hours);
     }
 
     private void OnSkipUnreachableToggled(object? sender, ToggledEventArgs e)
@@ -546,7 +602,7 @@ public partial class ProfilePage : ContentPage
     {
         string currentVersion = AppInfo.Current.VersionString;
         await Navigation.PushModalAsync(new AboutPopupPage(
-            "About Streak Saver", currentVersion, string.Empty, false));
+            Localization.T("Prof_AboutStreakSaver"), currentVersion, string.Empty, false));
     }
 
 #if ANDROID
@@ -558,12 +614,13 @@ public partial class ProfilePage : ContentPage
         try
         {
             CheckUpdatesButton.IsEnabled = false;
-            CheckUpdatesButton.Text = "Checking…";
+            CheckUpdatesButton.Text = Localization.T("Prof_CheckingUpdates");
 
             var info = await _updateService.CheckForUpdatesAsync();
             if (info == null)
             {
-                await DisplayAlert("Update Check", "Could not reach the update server. Please try again later.", "OK");
+                await DisplayAlert(Localization.T("Prof_UpdateCheckTitle"),
+                    Localization.T("Prof_UpdateServerUnreachable"), Localization.T("Common_OK"));
                 return;
             }
 
@@ -575,16 +632,18 @@ public partial class ProfilePage : ContentPage
             if (info.HasUpdate)
             {
                 await Navigation.PushModalAsync(new AboutPopupPage(
-                    "Update Available!", remoteVersion, info.Changelog, true, info.ApkDownloadUrl));
+                    Localization.T("Dash_UpdateAvailable"), remoteVersion, info.Changelog, true, info.ApkDownloadUrl));
             }
             else
             {
-                await DisplayAlert("Up to Date", $"You are already on the latest version (v{currentVersion}).", "OK");
+                await DisplayAlert(Localization.T("Prof_UpToDate"),
+                    string.Format(Localization.T("Prof_AlreadyLatest"), currentVersion), Localization.T("Common_OK"));
             }
         }
         catch (Exception ex)
         {
-            await DisplayAlert("Update Check", $"Update check failed: {ex.Message}", "OK");
+            await DisplayAlert(Localization.T("Prof_UpdateCheckTitle"),
+                string.Format(Localization.T("Prof_UpdateCheckFailed"), ex.Message), Localization.T("Common_OK"));
         }
         finally
         {
@@ -604,7 +663,8 @@ public partial class ProfilePage : ContentPage
 
     private async void OnLogoutClicked(object? sender, EventArgs e)
     {
-        bool confirm = await DisplayAlert("Logout", "This will clear your TikTok session. You'll need to login again before running automations.", "Logout", "Cancel");
+        bool confirm = await DisplayAlert(Localization.T("Prof_LogoutTitle"),
+            Localization.T("Prof_LogoutBody"), Localization.T("Prof_LogoutTitle"), Localization.T("Common_Cancel"));
         if (confirm)
         {
             _sessionService.ClearSession();
@@ -624,18 +684,18 @@ public partial class ProfilePage : ContentPage
             var filePath = System.IO.Path.Combine(FileSystem.CacheDirectory, BackupService.SuggestedFileName(DateTime.Now));
             await System.IO.File.WriteAllTextAsync(filePath, json);
 
-            ShowBackupResult($"Backed up {backup.Friends.Count} entries plus your settings and history. Save the file somewhere you can find it again — it is the only copy.",
+            ShowBackupResult(string.Format(Localization.T("Prof_BackupDone"), backup.Friends.Count),
                 isError: false);
 
             await Share.Default.RequestAsync(new ShareFileRequest
             {
-                Title = "Streak Saver backup",
+                Title = Localization.T("Prof_BackupShareTitle"),
                 File = new ShareFile(filePath, "application/json")
             });
         }
         catch (Exception ex)
         {
-            ShowBackupResult($"Could not create the backup: {ex.Message}", isError: true);
+            ShowBackupResult(string.Format(Localization.T("Prof_BackupFailed"), ex.Message), isError: true);
         }
     }
 
@@ -645,7 +705,7 @@ public partial class ProfilePage : ContentPage
         {
             var picked = await FilePicker.Default.PickAsync(new PickOptions
             {
-                PickerTitle = "Select a Streak Saver backup",
+                PickerTitle = Localization.T("Prof_SelectBackupFile"),
                 FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
                 {
                     { DevicePlatform.Android, new[] { "application/json", "*/*" } },
@@ -664,32 +724,41 @@ public partial class ProfilePage : ContentPage
             // Refused rather than half-applied when the file is unreadable or from a newer build.
             if (!AppBackupCodec.TryDeserialize(json, out var backup, out var codecError) || backup is null)
             {
-                var message = codecError ?? "The file could not be read.";
+                var message = codecError ?? Localization.T("Prof_FileUnreadable");
                 ShowBackupResult(message, isError: true);
-                await DisplayAlert("Restore Failed", message, "OK");
+                await DisplayAlert(Localization.T("Prof_RestoreFailed"), message, Localization.T("Common_OK"));
                 return;
             }
 
             var summary = AppBackupCodec.Summarize(backup);
-            var contents = $"{summary.Friends} friends, {summary.Groups} groups, {summary.RunHistoryCount} past runs.\n"
-                         + $"Written {summary.ExportedAtText}"
-                         + (string.IsNullOrWhiteSpace(summary.AppVersion) ? "." : $" by app {summary.AppVersion}.");
+            var contents = string.Format(Localization.T("Prof_BackupContents"),
+                               summary.Friends, summary.Groups, summary.RunHistoryCount) + "\n"
+                         + string.Format(Localization.T("Prof_BackupWritten"), summary.ExportedAtText)
+                         + (string.IsNullOrWhiteSpace(summary.AppVersion)
+                             ? "."
+                             : " " + string.Format(Localization.T("Prof_BackupByApp"), summary.AppVersion));
+
+            var mergeOption = Localization.T("Prof_RestoreMerge");
+            var replaceOption = Localization.T("Prof_RestoreReplace");
+            var cancelOption = Localization.T("Common_Cancel");
 
             var choice = await DisplayActionSheet(
-                $"This backup holds:\n{contents}\n\nHow should it be applied?",
-                "Cancel",
+                string.Format(Localization.T("Prof_RestoreHowToApply"), contents),
+                cancelOption,
                 null,
-                "Merge — keep what is on this device",
-                "Replace — use only the backup");
+                mergeOption,
+                replaceOption);
 
-            if (string.IsNullOrEmpty(choice) || choice == "Cancel")
+            if (string.IsNullOrEmpty(choice) || choice == cancelOption)
                 return;
 
-            await ApplyRestoreAsync(backup, replace: choice.StartsWith("Replace", StringComparison.Ordinal));
+            // The prefix is taken from the localized option, so the comparison follows the language on screen.
+            var replacePrefix = replaceOption.Split(' ')[0];
+            await ApplyRestoreAsync(backup, replace: choice.StartsWith(replacePrefix, StringComparison.Ordinal));
         }
         catch (Exception ex)
         {
-            ShowBackupResult($"Could not restore: {ex.Message}", isError: true);
+            ShowBackupResult(string.Format(Localization.T("Prof_RestoreFailedBody"), ex.Message), isError: true);
         }
     }
 
@@ -701,39 +770,39 @@ public partial class ProfilePage : ContentPage
         if (replace)
         {
             var confirmed = await DisplayAlert(
-                "Replace everything?",
-                "Your current friends, groups and messages will be removed and replaced by the backup. This cannot be undone.",
-                "Replace",
-                "Cancel");
+                Localization.T("Prof_ReplaceConfirmTitle"),
+                Localization.T("Prof_ReplaceConfirmBody"),
+                Localization.T("Prof_Replace"),
+                Localization.T("Common_Cancel"));
             if (!confirmed)
                 return;
         }
 
         if (!_backupService.TryApply(backup, replace, out var applied, out var applyError))
         {
-            var message = applyError ?? "The restore did not complete.";
+            var message = applyError ?? Localization.T("Prof_RestoreIncomplete");
             ShowBackupResult(message, isError: true);
-            await DisplayAlert("Restore Failed", message, "OK");
+            await DisplayAlert(Localization.T("Prof_RestoreFailed"), message, Localization.T("Common_OK"));
             return;
         }
 
         var detail = replace
-            ? $"Replaced your list with {applied.FriendsTotal} entries."
-            : $"Added {applied.FriendsAdded} new entries; {applied.FriendsSkipped} were already here. "
-              + $"The list now holds {applied.FriendsTotal}.";
+            ? string.Format(Localization.T("Prof_RestoreReplaced"), applied.FriendsTotal)
+            : string.Format(Localization.T("Prof_RestoreMerged"),
+                applied.FriendsAdded, applied.FriendsSkipped, applied.FriendsTotal);
 
-        detail += applied.HistoryRestored
-            ? " Past runs were restored."
-            : " Your existing run history was kept.";
+        detail += " " + (applied.HistoryRestored
+            ? Localization.T("Prof_HistoryRestored")
+            : Localization.T("Prof_HistoryKept"));
 
         // The restored values are on screen now, not the ones from before the restore.
         LoadSettingsFromStorage();
         UpdateLoginButtonState(_sessionService.IsSessionValid());
 
         ShowBackupResult(detail, isError: false);
-        await DisplayAlert("Restore Complete",
-            detail + "\n\nA backup never contains your TikTok login, so sign in again if the app asks.",
-            "OK");
+        await DisplayAlert(Localization.T("Prof_RestoreComplete"),
+            detail + "\n\n" + Localization.T("Prof_RestoreLoginNote"),
+            Localization.T("Common_OK"));
     }
 
     private void ShowBackupResult(string message, bool isError)
