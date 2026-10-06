@@ -145,14 +145,37 @@
         }
     };
 
+    var getRootDoc = function () {
+        try {
+            var iframe = document.querySelector('iframe[src*="/messages"]') ||
+                document.querySelector('iframe[data-testid*="message-index"]');
+            if (iframe && iframe.contentDocument) {
+                return iframe.contentDocument;
+            }
+        } catch (e) { }
+        return document;
+    };
+
+    var getRootWin = function () {
+        try {
+            var iframe = document.querySelector('iframe[src*="/messages"]') ||
+                document.querySelector('iframe[data-testid*="message-index"]');
+            if (iframe && iframe.contentWindow) {
+                return iframe.contentWindow;
+            }
+        } catch (e) { }
+        return window;
+    };
+
     var findItems = function () {
-        var items = document.querySelectorAll("[data-e2e*='dm-new-conversation-item']");
+        var doc = getRootDoc();
+        var items = doc.querySelectorAll("[data-e2e*='dm-new-conversation-item']");
         if (items.length > 0) return items;
 
         var fallbacks = ["[data-e2e*='chat-list-item']", "[data-e2e*='chat-item']"];
         for (var i = 0; i < fallbacks.length; i++) {
             try {
-                items = document.querySelectorAll(fallbacks[i]);
+                items = doc.querySelectorAll(fallbacks[i]);
                 if (items.length > 0) return items;
             } catch (e) { }
         }
@@ -161,9 +184,10 @@
     };
 
     var findScrollContainer = function (items) {
+        var doc = getRootDoc();
         if (items.length > 0) {
             var parent = items[0].parentElement;
-            while (parent && parent !== document.body) {
+            while (parent && parent !== doc.body && parent !== document.body) {
                 if (parent.scrollHeight > parent.clientHeight + 10) return parent;
                 parent = parent.parentElement;
             }
@@ -172,10 +196,11 @@
     };
 
     var findHeader = function () {
-        return document.querySelector('[data-e2e="chat-header"]') ||
-            document.querySelector('[class*="ChatHeader"]') ||
-            document.querySelector('[class*="chatHeader"]') ||
-            document.querySelector('[class*="DivChatHeader"]');
+        var doc = getRootDoc();
+        return doc.querySelector('[data-e2e="chat-header"]') ||
+            doc.querySelector('[class*="ChatHeader"]') ||
+            doc.querySelector('[class*="chatHeader"]') ||
+            doc.querySelector('[class*="DivChatHeader"]');
     };
 
     // What the page actually contains, reported so a scan that finds nothing can say why.
@@ -185,13 +210,15 @@
     // Without this the only symptom is "0 found", which is the same for a wrong layout, a renamed
     // selector and a genuinely empty inbox.
     var countAll = function (selector) {
-        try { return document.querySelectorAll(selector).length; } catch (e) { return -1; }
+        try { return getRootDoc().querySelectorAll(selector).length; } catch (e) { return -1; }
     };
 
     var describePage = function () {
+        var doc = getRootDoc();
+        var win = getRootWin();
         var e2e = [];
         try {
-            var nodes = document.querySelectorAll('[data-e2e]');
+            var nodes = doc.querySelectorAll('[data-e2e]');
             for (var i = 0; i < nodes.length && e2e.length < 8; i++) {
                 var value = nodes[i].getAttribute('data-e2e');
                 if (value && e2e.indexOf(value) === -1) e2e.push(value);
@@ -199,8 +226,9 @@
         } catch (e) { }
 
         scan.diag = {
-            viewport: window.innerWidth + 'x' + window.innerHeight,
-            dpr: window.devicePixelRatio,
+            viewport: win.innerWidth + 'x' + win.innerHeight,
+            dpr: win.devicePixelRatio || window.devicePixelRatio,
+            isIframe: doc !== document,
             dmItems: countAll("[data-e2e*='dm-new-conversation-item']"),
             chatListItems: countAll("[data-e2e*='chat-list-item']"),
             chatItems: countAll("[data-e2e*='chat-item']"),
@@ -401,6 +429,18 @@
         if (groupReason(header, distinctProfileLinks(header))) return null;
 
         var username = usernameFrom(headerProfileLink(header));
+        if (!username) {
+            var uniqueElem = header.querySelector('[data-e2e="chat-uniqueid"]');
+            if (uniqueElem) {
+                var uniqueText = (uniqueElem.textContent || '').trim();
+                if (uniqueText.startsWith('@')) {
+                    uniqueText = uniqueText.substring(1);
+                }
+                if (isUsableUsername(uniqueText)) {
+                    username = uniqueText;
+                }
+            }
+        }
         if (!isUsableUsername(username)) return null;
 
         return {
@@ -679,6 +719,7 @@
 
     // Why this header looks like a group, or empty when it looks like a person.
     var groupReason = function (header, linkCount) {
+        if (header && header.querySelector && header.querySelector('[data-e2e="chat-uniqueid"]')) return '';
         if (linkCount === 0) return 'no profile link';
         if (linkCount > 1) return 'member stack';
         if (MEMBER_COUNT.test(text(header))) return 'participant count';
@@ -702,6 +743,18 @@
         // under it - and because it is the count of these that says whether there is one account to
         // link to, which is what separates a direct message from a group.
         var username = usernameFrom(headerProfileLink(header));
+        if (!username) {
+            var uniqueElem = header.querySelector('[data-e2e="chat-uniqueid"]');
+            if (uniqueElem) {
+                var uniqueText = (uniqueElem.textContent || '').trim();
+                if (uniqueText.startsWith('@')) {
+                    uniqueText = uniqueText.substring(1);
+                }
+                if (isUsableUsername(uniqueText)) {
+                    username = uniqueText;
+                }
+            }
+        }
         var reason = groupReason(header, distinctProfileLinks(header));
         if (reason) return { username: '', displayName: name, isGroup: true, reason: reason };
 

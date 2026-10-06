@@ -131,6 +131,8 @@ public class WebViewNavigationPolicyTests
     [InlineData("https://www.tiktok.com/messages")]
     [InlineData("https://www.tiktok.com/messages?lang=en")]
     [InlineData("https://m.tiktok.com/messages")]
+    [InlineData("https://www.tiktok.com/business-suite/messages")]
+    [InlineData("https://www.tiktok.com/business-suite/messages?lang=id-ID&from=homepage")]
     public void TheInboxIsRecognised(string url)
     {
         // The reader is only ever sent here. Anything else and it reads a page that has no conversations

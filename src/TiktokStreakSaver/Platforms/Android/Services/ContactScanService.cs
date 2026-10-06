@@ -499,12 +499,12 @@ public class ContactScanService : Service
             if (_finished)
                 return;
 
-            if (!(_webView?.Url ?? string.Empty).Contains("tiktok.com/messages"))
+            if (!WebViewNavigationPolicy.IsInbox(_webView?.Url))
             {
                 _webView?.LoadUrl(MessagesUrl);
                 _mainHandler?.PostDelayed(() =>
                 {
-                    if (!_finished && !(_webView?.Url ?? string.Empty).Contains("tiktok.com/messages"))
+                    if (!_finished && !WebViewNavigationPolicy.IsInbox(_webView?.Url))
                         Finish(ContactScanPhase.Failed, Localization.T("Android_CouldNotOpenMessages"));
                 }, 5000);
             }

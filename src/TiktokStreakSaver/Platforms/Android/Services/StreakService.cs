@@ -66,6 +66,8 @@ public class StreakService : Service
     private int _failureAttemptsForCurrentFriend;
     private const int MaxSendAttemptsPerFriend = 4;
     private bool _allowSendRetries = true;
+    private Action? _currentFriendTimeoutAction;
+    private const long FriendTimeoutMs = 75000; // 75 seconds watchdog per friend
 
     /// <summary>
     /// Verification reported by the script for the send currently in flight: true when the composer
@@ -515,12 +517,12 @@ public class StreakService : Service
 
             _mainHandler!.PostDelayed(() =>
             {
-                if (!(_webView?.Url ?? "").Contains("tiktok.com/messages"))
+                if (!WebViewNavigationPolicy.IsInbox(_webView?.Url))
                 {
                     _webView?.LoadUrl("https://www.tiktok.com/messages?lang=en");
                     _mainHandler.PostDelayed(() =>
                     {
-                        if (!(_webView?.Url ?? "").Contains("tiktok.com/messages"))
+                        if (!WebViewNavigationPolicy.IsInbox(_webView?.Url))
                         {
                             CompleteService(false, Localization.T("Android_CouldNotNavigate"));
                         }
@@ -536,6 +538,12 @@ public class StreakService : Service
 
     private void CleanupWebView()
     {
+        if (_currentFriendTimeoutAction != null)
+        {
+            _mainHandler?.RemoveCallbacks(_currentFriendTimeoutAction);
+            _currentFriendTimeoutAction = null;
+        }
+
         _mainHandler?.Post(() =>
         {
             _webView?.StopLoading();
@@ -547,7 +555,7 @@ public class StreakService : Service
     internal void OnPageLoaded(string url)
     {
         // Check if we're on the messages page
-        if (url.Contains("tiktok.com/messages"))
+        if (WebViewNavigationPolicy.IsInbox(url))
         {
             // Guard: only start the automation chain once (first page load).
             // Subsequent friends reuse the same SPA session — inject script only (no full reload).
@@ -656,6 +664,20 @@ public class StreakService : Service
         if (!_dryRun)
             PendingSends.MarkAttempted(friend.Id, friend.Username, DateTime.Now);
 
+        if (_currentFriendTimeoutAction != null)
+        {
+            _mainHandler?.RemoveCallbacks(_currentFriendTimeoutAction);
+            _currentFriendTimeoutAction = null;
+        }
+
+        _currentFriendTimeoutAction = () =>
+        {
+            if (_isCancelRequested) return;
+            AppLog("TIMEOUT", displayLabel, "Automation watchdog timed out after 75s without callback");
+            OnMessageResult(target, false, "Watchdog timeout after 75s");
+        };
+        _mainHandler?.PostDelayed(_currentFriendTimeoutAction, FriendTimeoutMs);
+
         _webView?.EvaluateJavascript(js, null);
     }
 
@@ -688,6 +710,12 @@ public class StreakService : Service
 
     internal void OnMessageResult(string username, bool success, string error)
     {
+        if (_currentFriendTimeoutAction != null)
+        {
+            _mainHandler?.RemoveCallbacks(_currentFriendTimeoutAction);
+            _currentFriendTimeoutAction = null;
+        }
+
         if (_isCancelRequested) return;
         if (_friendsToProcess == null || _settingsService == null) return;
 

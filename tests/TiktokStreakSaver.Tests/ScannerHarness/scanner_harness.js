@@ -245,6 +245,19 @@ const scenarios = [
             { displayName: 'Fadhil', isGroup: false, username: 'Fadhil' }
         ],
         expectedLog: ['Header never settled']
+    },
+    {
+        title: 'a Business Suite inbox hosted inside an iframe',
+        wrapInIframe: true,
+        href: 'https://www.tiktok.com/business-suite/messages',
+        chats: [
+            { name: 'Zexor', links: ['/@zexora990'] },
+            { name: 'Alice', links: ['/@alice'] }
+        ],
+        expected: [
+            { displayName: 'Zexor', isGroup: false, username: 'zexora990' },
+            { displayName: 'Alice', isGroup: false, username: 'alice' }
+        ]
     }
 ];
 
@@ -411,7 +424,8 @@ function buildSandbox(scenario) {
            { getAttribute: () => '/@writer2', closest: () => null }]
         : [];
 
-    const document = {
+    const isIframe = !!scenario.wrapInIframe;
+    const innerDocument = {
         body: {},
         querySelectorAll: (selector) => {
             if (selector.indexOf('dm-new-conversation-item') !== -1) return rowsFor();
@@ -423,9 +437,8 @@ function buildSandbox(scenario) {
     };
 
     const sandbox = {
-        document,
         navigator: { userAgent: 'harness' },
-        location: { href: 'https://www.tiktok.com/messages' },
+        location: { href: scenario.href || 'https://www.tiktok.com/messages' },
         SaverScan: { report: () => { } },
         console,
         clearTimeout,
@@ -437,6 +450,21 @@ function buildSandbox(scenario) {
         devicePixelRatio: 1
     };
 
+    const document = isIframe ? {
+        body: {},
+        querySelectorAll: () => [],
+        querySelector: (selector) => {
+            if (selector.indexOf('iframe') !== -1) {
+                return {
+                    contentDocument: innerDocument,
+                    contentWindow: sandbox
+                };
+            }
+            return null;
+        }
+    } : innerDocument;
+
+    sandbox.document = document;
     sandbox.window = sandbox;
     sandbox.addEventListener = () => { };
 

@@ -106,7 +106,8 @@ public static class WebViewNavigationPolicy
     public static bool IsInbox(string? url) =>
         !string.IsNullOrEmpty(url)
         && url.Contains("tiktok.com", StringComparison.OrdinalIgnoreCase)
-        && url.Contains("/messages", StringComparison.OrdinalIgnoreCase);
+        && (url.Contains("/messages", StringComparison.OrdinalIgnoreCase)
+            || url.Contains("/business-suite/messages", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Whether the URL is a page with no content on it, which is what a WebView shows before it has

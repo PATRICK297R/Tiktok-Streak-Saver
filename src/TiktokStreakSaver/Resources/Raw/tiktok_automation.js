@@ -14,6 +14,20 @@
     var checkedUsernames = {};
     var newItemsFound = 0;
 
+    var globalWatchdog = setTimeout(function () {
+        if (!found) {
+            log('[WATCHDOG] Global timeout reached (60s)');
+            reportError('Automation timed out after 60s');
+        }
+    }, 60000);
+
+    var clearWatchdog = function () {
+        if (globalWatchdog) {
+            clearTimeout(globalWatchdog);
+            globalWatchdog = null;
+        }
+    };
+
     var log = function (msg) {
         if (typeof StreakApp == 'undefined') {
             console.log(msg);
@@ -22,46 +36,75 @@
         StreakApp.log(msg);
     };
 
+    var getRootDoc = function () {
+        try {
+            var iframe = document.querySelector('iframe[src*="/messages"]') ||
+                document.querySelector('iframe[data-testid*="message-index"]');
+            if (iframe && iframe.contentDocument) {
+                return iframe.contentDocument;
+            }
+        } catch (e) { }
+        return document;
+    };
+
+    var getRootWin = function () {
+        try {
+            var iframe = document.querySelector('iframe[src*="/messages"]') ||
+                document.querySelector('iframe[data-testid*="message-index"]');
+            if (iframe && iframe.contentWindow) {
+                return iframe.contentWindow;
+            }
+        } catch (e) { }
+        return window;
+    };
+
     // ── Environment & Diagnostics ────────────────────────────────────────────
 
     var dumpEnvironment = function () {
+        var doc = getRootDoc();
+        var win = getRootWin();
         log('=== FULL ENVIRONMENT DUMP ===');
         log('[ENV] User Agent: ' + navigator.userAgent);
         log('[ENV] Platform: ' + navigator.platform);
         log('[ENV] Page URL: ' + window.location.href);
         log('[ENV] Page Title: ' + document.title);
         log('[ENV] Document Ready: ' + document.readyState);
-        log('[ENV] Total DOM elements: ' + document.querySelectorAll('*').length);
-        log('[ENV] Viewport: ' + window.innerWidth + 'x' + window.innerHeight);
+        log('[ENV] Is Iframe: ' + (doc !== document ? 'YES' : 'NO'));
+        if (doc !== document) {
+            log('[ENV] Iframe Ready: ' + doc.readyState);
+        }
+        log('[ENV] Total DOM elements: ' + doc.querySelectorAll('*').length);
+        log('[ENV] Viewport: ' + win.innerWidth + 'x' + win.innerHeight);
         log('[ENV] Screen: ' + screen.width + 'x' + screen.height);
 
-        log('[DOM] <html>: ' + (document.documentElement ? 'YES' : 'NO'));
-        log('[DOM] <body>: ' + (document.body ? 'YES' : 'NO'));
-        log('[DOM] Elements with id: ' + document.querySelectorAll('[id]').length);
-        log('[DOM] Elements with class: ' + document.querySelectorAll('[class]').length);
-        log('[DOM] Elements with data-e2e: ' + document.querySelectorAll('[data-e2e]').length);
+        log('[DOM] <html>: ' + (doc.documentElement ? 'YES' : 'NO'));
+        log('[DOM] <body>: ' + (doc.body ? 'YES' : 'NO'));
+        log('[DOM] Elements with id: ' + doc.querySelectorAll('[id]').length);
+        log('[DOM] Elements with class: ' + doc.querySelectorAll('[class]').length);
+        log('[DOM] Elements with data-e2e: ' + doc.querySelectorAll('[data-e2e]').length);
 
         // TikTok-specific structure checks
-        log('[TIKTOK] #app: ' + (document.getElementById('app') ? 'YES' : 'NO'));
-        log('[TIKTOK] [id*="app"]: ' + document.querySelectorAll('[id*="app"]').length);
-        log('[TIKTOK] [class*="messages"]: ' + document.querySelectorAll('[class*="messages"]').length);
-        log('[TIKTOK] [class*="Messages"]: ' + document.querySelectorAll('[class*="Messages"]').length);
-        log('[TIKTOK] [class*="chat"]: ' + document.querySelectorAll('[class*="chat"]').length);
-        log('[TIKTOK] [class*="Chat"]: ' + document.querySelectorAll('[class*="Chat"]').length);
-        log('[TIKTOK] [class*="conversation"]: ' + document.querySelectorAll('[class*="conversation"]').length);
-        log('[TIKTOK] [class*="Conversation"]: ' + document.querySelectorAll('[class*="Conversation"]').length);
-        log('[TIKTOK] [contenteditable]: ' + document.querySelectorAll('[contenteditable]').length);
+        log('[TIKTOK] #app: ' + (doc.getElementById('app') ? 'YES' : 'NO'));
+        log('[TIKTOK] [id*="app"]: ' + doc.querySelectorAll('[id*="app"]').length);
+        log('[TIKTOK] [class*="messages"]: ' + doc.querySelectorAll('[class*="messages"]').length);
+        log('[TIKTOK] [class*="Messages"]: ' + doc.querySelectorAll('[class*="Messages"]').length);
+        log('[TIKTOK] [class*="chat"]: ' + doc.querySelectorAll('[class*="chat"]').length);
+        log('[TIKTOK] [class*="Chat"]: ' + doc.querySelectorAll('[class*="Chat"]').length);
+        log('[TIKTOK] [class*="conversation"]: ' + doc.querySelectorAll('[class*="conversation"]').length);
+        log('[TIKTOK] [class*="Conversation"]: ' + doc.querySelectorAll('[class*="Conversation"]').length);
+        log('[TIKTOK] [contenteditable]: ' + doc.querySelectorAll('[contenteditable]').length);
 
         // Framework detection
-        log('[FRAMEWORK] window.React: ' + (typeof window.React !== 'undefined' ? 'YES' : 'NO'));
-        log('[FRAMEWORK] __REACT_DEVTOOLS_GLOBAL_HOOK__: ' + (typeof window.__REACT_DEVTOOLS_GLOBAL_HOOK__ !== 'undefined' ? 'YES' : 'NO'));
-        log('[FRAMEWORK] __NEXT_DATA__: ' + (typeof window.__NEXT_DATA__ !== 'undefined' ? 'YES' : 'NO'));
+        log('[FRAMEWORK] window.React: ' + (typeof win.React !== 'undefined' || typeof window.React !== 'undefined' ? 'YES' : 'NO'));
+        log('[FRAMEWORK] __REACT_DEVTOOLS_GLOBAL_HOOK__: ' + (typeof win.__REACT_DEVTOOLS_GLOBAL_HOOK__ !== 'undefined' || typeof window.__REACT_DEVTOOLS_GLOBAL_HOOK__ !== 'undefined' ? 'YES' : 'NO'));
+        log('[FRAMEWORK] __NEXT_DATA__: ' + (typeof win.__NEXT_DATA__ !== 'undefined' || typeof window.__NEXT_DATA__ !== 'undefined' ? 'YES' : 'NO'));
 
         log('=== END ENVIRONMENT DUMP ===');
     };
 
     var dumpDataE2eValues = function () {
-        var allE2e = document.querySelectorAll('[data-e2e]');
+        var doc = getRootDoc();
+        var allE2e = doc.querySelectorAll('[data-e2e]');
         var uniqueVals = {};
         for (var i = 0; i < allE2e.length; i++) {
             var val = allE2e[i].getAttribute('data-e2e');
@@ -81,9 +124,10 @@
     };
 
     var searchUsernameInDom = function () {
+        var doc = getRootDoc();
         log('[USERNAME-SEARCH] Hunting for: ' + userName);
         var xpath = "//*[contains(text(), '" + userName + "')]";
-        var result = document.evaluate(xpath, document, null, XPathResult.ANY_TYPE, null);
+        var result = doc.evaluate(xpath, doc, null, XPathResult.ANY_TYPE, null);
         var node = result.iterateNext();
         var foundNodes = 0;
 
@@ -93,7 +137,7 @@
             var path = [];
             var foundE2e = null;
 
-            for (var k = 0; k < 8 && current && current !== document.body; k++) {
+            for (var k = 0; k < 8 && current && current !== doc.body; k++) {
                 path.unshift(current.tagName);
                 if (current.hasAttribute && current.hasAttribute('data-e2e')) {
                     foundE2e = current.getAttribute('data-e2e');
@@ -123,7 +167,8 @@
         searchUsernameInDom();
 
         // Log visible body text length to detect empty/blocked pages
-        var bodyText = (document.body && document.body.innerText) || '';
+        var doc = getRootDoc();
+        var bodyText = (doc.body && doc.body.innerText) || (document.body && document.body.innerText) || '';
         log('[PAGE] Body text length: ' + bodyText.length + ' chars');
         if (bodyText.length < 200) {
             log('[PAGE] Body text (short page): ' + bodyText.substring(0, 200));
@@ -143,8 +188,9 @@
     // ── Chat Item Discovery ──────────────────────────────────────────────────
 
     var findChatItems = function () {
+        var doc = getRootDoc();
         // Primary: current TikTok DM selector
-        var items = document.querySelectorAll("[data-e2e*='dm-new-conversation-item']");
+        var items = doc.querySelectorAll("[data-e2e*='dm-new-conversation-item']");
         if (items.length > 0) {
             log('[FIND] Found ' + items.length + ' items via: dm-new-conversation-item');
             return items;
@@ -157,7 +203,7 @@
         ];
         for (var i = 0; i < fallbacks.length; i++) {
             try {
-                items = document.querySelectorAll(fallbacks[i]);
+                items = doc.querySelectorAll(fallbacks[i]);
                 if (items.length > 0) {
                     log('[FIND] Found ' + items.length + ' items via fallback: ' + fallbacks[i]);
                     return items;
@@ -170,16 +216,17 @@
     };
 
     var findChatListContainer = function () {
+        var doc = getRootDoc();
         if (chatItems.length > 0) {
             var parent = chatItems[0].parentElement;
-            while (parent && parent !== document.body) {
+            while (parent && parent !== doc.body && parent !== document.body) {
                 if (parent.scrollHeight > parent.clientHeight + 10) {
                     return parent;
                 }
                 parent = parent.parentElement;
             }
         }
-        var candidates = document.querySelectorAll('[class*="ChatList"], [class*="chatList"], [class*="conversation-list"]');
+        var candidates = doc.querySelectorAll('[class*="ChatList"], [class*="chatList"], [class*="conversation-list"]');
         for (var i = 0; i < candidates.length; i++) {
             if (candidates[i].scrollHeight > candidates[i].clientHeight + 10) {
                 return candidates[i];
@@ -234,16 +281,28 @@
     // ── Username Detection ───────────────────────────────────────────────────
 
     var findCurrentChatUsername = function () {
-        var chatHeader = document.querySelector('[data-e2e="chat-header"]') ||
-            document.querySelector('[class*="ChatHeader"]') ||
-            document.querySelector('[class*="chatHeader"]') ||
-            document.querySelector('[class*="DivChatHeader"]');
+        var doc = getRootDoc();
+        var chatHeader = doc.querySelector('[data-e2e="chat-header"]') ||
+            doc.querySelector('[class*="ChatHeader"]') ||
+            doc.querySelector('[class*="chatHeader"]') ||
+            doc.querySelector('[class*="DivChatHeader"]');
 
         if (chatHeader) {
+            var uniqueIdElem = chatHeader.querySelector('[data-e2e="chat-uniqueid"]');
+            if (uniqueIdElem) {
+                var uniqueText = (uniqueIdElem.textContent || '').trim();
+                if (uniqueText.startsWith('@')) {
+                    uniqueText = uniqueText.substring(1);
+                }
+                if (uniqueText) {
+                    return uniqueText;
+                }
+            }
+
             var headerLink = chatHeader.querySelector('a[href*="/@"]');
             if (headerLink) {
                 var href = headerLink.getAttribute('href') || '';
-                var match = href.match(/\/@([^\/]+)/);
+                var match = href.match(/\/@([^\/\?]+)/);
                 return match ? match[1] : '';
             }
             log('[HEADER] ChatHeader found but no a[href*="/@"] link inside it');
@@ -252,7 +311,7 @@
         }
 
         // Fallback: any profile link in the chat panel area
-        var links = document.querySelectorAll('[class*="StyledLink"]');
+        var links = doc.querySelectorAll('[class*="StyledLink"]');
         for (var i = 0; i < links.length; i++) {
             var link = links[i];
             var parent = link.closest('[data-e2e]');
@@ -260,7 +319,7 @@
 
             if (!parentAttr || parentAttr === 'chat-header') {
                 var href = link.getAttribute('href') || '';
-                var match = href.match(/\/@([^\/]+)/);
+                var match = href.match(/\/@([^\/\?]+)/);
                 if (match && match[1]) {
                     return match[1];
                 }
@@ -268,7 +327,7 @@
         }
 
         // Last resort: any a[href*="/@"] in the chat panel (right side), not in nav or chat list
-        var allProfileLinks = document.querySelectorAll('a[href*="/@"]');
+        var allProfileLinks = doc.querySelectorAll('a[href*="/@"]');
         for (var j = 0; j < allProfileLinks.length; j++) {
             var pLink = allProfileLinks[j];
             // Skip links inside the chat list sidebar
@@ -276,7 +335,7 @@
             // Skip links in the nav bar (these are the logged-in user's own profile)
             if (pLink.closest('[data-e2e*="nav-"]') || pLink.closest('[data-e2e="profile-icon"]') || pLink.closest('nav')) continue;
             var href = pLink.getAttribute('href') || '';
-            var match = href.match(/\/@([^\/]+)/);
+            var match = href.match(/\/@([^\/\?]+)/);
             if (match && match[1]) {
                 log('[HEADER] Found username via last-resort profile link: ' + match[1]);
                 return match[1];
@@ -297,10 +356,11 @@
 
     // Get the header text for group matching (no profile link needed)
     var findCurrentChatName = function () {
-        var header = document.querySelector('[data-e2e="chat-header"]') ||
-            document.querySelector('[class*="ChatHeader"]') ||
-            document.querySelector('[class*="chatHeader"]') ||
-            document.querySelector('[class*="DivChatHeader"]');
+        var doc = getRootDoc();
+        var header = doc.querySelector('[data-e2e="chat-header"]') ||
+            doc.querySelector('[class*="ChatHeader"]') ||
+            doc.querySelector('[class*="chatHeader"]') ||
+            doc.querySelector('[class*="DivChatHeader"]');
         if (!header) {
             log('[HEADER] No chat header found');
             return '';
@@ -308,16 +368,17 @@
 
         var headerText = (header.textContent || '').trim();
         var profileLink = header.querySelector('a[href*="/@"]');
-        
+        var uniqueIdElem = header.querySelector('[data-e2e="chat-uniqueid"]');
+
         // Group-specific markers from detect_groups.js
         var hasGroupClass = !!header.querySelector('[class*="group"], [class*="Group"], [class*="member"], [class*="Member"]');
         var memberMatch = headerText.match(/(\d+)\s*member/i);
         var avatars = header.querySelectorAll('img');
 
-        log('[HEADER] Detect: profileLink=' + !!profileLink + ', groupClass=' + hasGroupClass + ', memberMatch=' + !!memberMatch + ', avatars=' + avatars.length);
+        log('[HEADER] Detect: profileLink=' + !!profileLink + ', uniqueId=' + !!uniqueIdElem + ', groupClass=' + hasGroupClass + ', memberMatch=' + !!memberMatch + ', avatars=' + avatars.length);
 
-        if (profileLink) {
-            log('[HEADER] Detected as DM (has profile link)');
+        if (profileLink || uniqueIdElem) {
+            log('[HEADER] Detected as DM (has profile link or uniqueid)');
             return '';
         }
 
@@ -334,10 +395,11 @@
     // ── Message Input & Sending ──────────────────────────────────────────────
 
     var findMessageInput = function () {
-        var editor = document.querySelector('[class*="DraftEditor-editorContainer"] [contenteditable="true"]') ||
-            document.querySelector('[class*="DraftEditor-root"] [contenteditable="true"]') ||
-            document.querySelector('div[contenteditable="true"][role="textbox"]') ||
-            document.querySelector('div[contenteditable="true"]');
+        var doc = getRootDoc();
+        var editor = doc.querySelector('[class*="DraftEditor-editorContainer"] [contenteditable="true"]') ||
+            doc.querySelector('[class*="DraftEditor-root"] [contenteditable="true"]') ||
+            doc.querySelector('div[contenteditable="true"][role="textbox"]') ||
+            doc.querySelector('div[contenteditable="true"]');
 
         return editor;
     };
@@ -373,72 +435,64 @@
     var typeMessage = function (messageInput, callback) {
         log('[TYPE] Starting typeMessage...');
 
-        var draftEditor = findDraftEditor(messageInput);
-
-        if (draftEditor) {
-            log('[TYPE] Using Draft.js _onPaste method');
-
-            draftEditor.focus();
-
-            setTimeout(function () {
-                var dataTransfer = new DataTransfer();
-                dataTransfer.setData('text/plain', message);
-
-                var pasteEvent = new ClipboardEvent('paste', {
-                    bubbles: true,
-                    cancelable: true,
-                    clipboardData: dataTransfer
-                });
-
-                try {
-                    draftEditor._onPaste(pasteEvent);
-                    log('[TYPE] _onPaste called successfully');
-                } catch (e) {
-                    log('[TYPE] _onPaste error: ' + e.message);
-                }
-
-                setTimeout(function () {
-                    var content = messageInput.textContent || '';
-                    log('[TYPE] Content after _onPaste: "' + content.substring(0, 50) + '" (len=' + content.length + ')');
-                    callback();
-                }, 300);
-            }, 200);
-        } else {
-            log('[TYPE] Draft.js not found, falling back to execCommand');
-
+        var tryExecCommand = function () {
+            log('[TYPE] Using execCommand insertText...');
             messageInput.click();
             messageInput.focus();
 
             setTimeout(function () {
-                var selection = window.getSelection();
-                var range = document.createRange();
+                var doc = getRootDoc();
+                var win = getRootWin();
+                var selection = win.getSelection ? win.getSelection() : window.getSelection();
+                var range = doc.createRange ? doc.createRange() : document.createRange();
                 range.selectNodeContents(messageInput);
                 range.collapse(false);
                 selection.removeAllRanges();
                 selection.addRange(range);
 
-                document.execCommand('insertText', false, message);
-                var content = messageInput.textContent || '';
-                log('[TYPE] Content after execCommand: "' + content.substring(0, 50) + '" (len=' + content.length + ')');
+                if (doc.execCommand) {
+                    doc.execCommand('insertText', false, message);
+                } else {
+                    document.execCommand('insertText', false, message);
+                }
 
-                setTimeout(callback, 300);
-            }, 200);
-        }
+                var content = (messageInput.textContent || '').trim();
+                log('[TYPE] Content after execCommand: "' + content.substring(0, 50) + '" (len=' + content.length + ')');
+                if (content.length > 0) {
+                    setTimeout(callback, 300);
+                } else {
+                    messageInput.textContent = message;
+                    messageInput.dispatchEvent(new (win.InputEvent || InputEvent)('input', { bubbles: true }));
+                    setTimeout(callback, 300);
+                }
+            }, 150);
+        };
+
+        tryExecCommand();
     };
 
     var sendMessage = function (messageInput) {
-        var sendBtn = document.querySelector('[data-e2e*="send"]') ||
-            document.querySelector('[data-e2e*="Send"]') ||
-            document.querySelector('button[type="submit"]');
+        var doc = getRootDoc();
+        var win = getRootWin();
+        var sendBtn = doc.querySelector('[data-e2e*="send"]') ||
+            doc.querySelector('[data-e2e*="Send"]') ||
+            doc.querySelector('button[type="submit"]');
 
         if (sendBtn) {
-            log('[SEND] Found send button, clicking...');
-            sendBtn.dispatchEvent(new Event('click', { bubbles: true }));
+            log('[SEND] Found send button (' + sendBtn.tagName + '), clicking...');
+            if (typeof sendBtn.click === 'function') {
+                sendBtn.click();
+            }
+            sendBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: win }));
+            if (sendBtn.parentElement && sendBtn.parentElement !== doc.body && typeof sendBtn.parentElement.click === 'function') {
+                sendBtn.parentElement.click();
+            }
             return;
         }
 
         log('[SEND] No send button found, pressing Enter...');
-        messageInput.dispatchEvent(new KeyboardEvent('keydown', {
+        var keyEventClass = win.KeyboardEvent || KeyboardEvent;
+        messageInput.dispatchEvent(new keyEventClass('keydown', {
             key: 'Enter',
             code: 'Enter',
             keyCode: 13,
@@ -447,7 +501,7 @@
             cancelable: true
         }));
 
-        messageInput.dispatchEvent(new KeyboardEvent('keyup', {
+        messageInput.dispatchEvent(new keyEventClass('keyup', {
             key: 'Enter',
             code: 'Enter',
             keyCode: 13,
@@ -459,6 +513,7 @@
     // ── Result Reporting ─────────────────────────────────────────────────────
 
     var reportSuccess = function () {
+        clearWatchdog();
         log('[RESULT] SUCCESS — Message sent to ' + userName);
         if (typeof StreakApp !== 'undefined') {
             StreakApp.onMessageSent(userName, true, '');
@@ -466,6 +521,7 @@
     };
 
     var reportError = function (errorMessage) {
+        clearWatchdog();
         log('[RESULT] FAIL — ' + errorMessage);
         if (typeof StreakApp !== 'undefined') {
             StreakApp.onMessageSent(userName, false, errorMessage);
@@ -491,24 +547,42 @@
 
         log('[CHAT] Found message input, typing...');
         typeMessage(messageInput, function () {
+            var typedContent = (messageInput.textContent || '').trim();
+            if (typedContent.length === 0) {
+                log('[CHAT] Message input empty after typing');
+                reportError('Failed to type message in composer');
+                return;
+            }
+
             sendMessage(messageInput);
 
             setTimeout(function () {
-                var confirmed = false;
-                try {
-                    var remaining = (messageInput.textContent || '').trim();
-                    confirmed = remaining.length === 0;
-                    log('[VERIFY] Composer after send: len=' + remaining.length + ' -> ' + (confirmed ? 'confirmed' : 'unverified'));
-                } catch (e) {
-                    log('[VERIFY] Could not read composer after send: ' + e.message);
+                var remaining = (messageInput.textContent || '').trim();
+                if (remaining.length > 0) {
+                    log('[VERIFY] Composer still has text after send button click, trying Enter fallback...');
+                    var win = getRootWin();
+                    var keyEventClass = win.KeyboardEvent || KeyboardEvent;
+                    messageInput.dispatchEvent(new keyEventClass('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+                    messageInput.dispatchEvent(new keyEventClass('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
                 }
 
-                if (typeof StreakApp !== 'undefined') {
-                    StreakApp.reportVerification(confirmed);
-                }
+                setTimeout(function () {
+                    var confirmed = false;
+                    try {
+                        var finalRemaining = (messageInput.textContent || '').trim();
+                        confirmed = finalRemaining.length === 0;
+                        log('[VERIFY] Composer final status: len=' + finalRemaining.length + ' -> ' + (confirmed ? 'confirmed' : 'unverified'));
+                    } catch (e) {
+                        log('[VERIFY] Could not read composer: ' + e.message);
+                    }
 
-                reportSuccess();
-            }, 1500);
+                    if (typeof StreakApp !== 'undefined') {
+                        StreakApp.reportVerification(confirmed);
+                    }
+
+                    reportSuccess();
+                }, 1000);
+            }, 1000);
         });
     };
 
@@ -563,7 +637,7 @@
             // DM mode only pre-click optimization
             for (var i = 0; i < itemLinks.length; i++) {
                 var href = itemLinks[i].getAttribute('href') || '';
-                var match = href.match(/\/@([^\/]+)/);
+                var match = href.match(/\/@([^\/\?]+)/);
                 if (match && match[1]) {
                     var inlineUsername = match[1].toLowerCase().trim();
                     if (checkedUsernames[inlineUsername]) {
@@ -586,54 +660,68 @@
         log('[CHAT] Clicking item ' + (chatIndex + 1) + '/' + chatItems.length);
         chatItem.click();
 
-        setTimeout(function () {
-            var currentName;
-            if (isGroup) {
-                // Group mode: get header text, skip DMs (which have profile links)
-                currentName = findCurrentChatName();
-                if (currentName) {
-                    log('[CHAT] Current chat: "' + currentName.substring(0, 50) + '" (group target: "' + userName + '")');
+        var processOpenedChat = function (retriesLeft) {
+            try {
+                var currentName;
+                if (isGroup) {
+                    currentName = findCurrentChatName();
+                    if (!currentName && retriesLeft > 0) {
+                        setTimeout(function () { processOpenedChat(retriesLeft - 1); }, 500);
+                        return;
+                    }
+                    if (currentName) {
+                        log('[CHAT] Current chat: "' + currentName.substring(0, 50) + '" (group target: "' + userName + '")');
+                    } else {
+                        var dmUser = findCurrentChatUsername();
+                        log('[CHAT] Skipping DM: @' + dmUser);
+                        if (dmUser) checkedUsernames[dmUser.toLowerCase()] = true;
+                        chatIndex++;
+                        checkNextChat();
+                        return;
+                    }
                 } else {
-                    // Has a profile link — this is a DM, skip it
-                    var dmUser = findCurrentChatUsername();
-                    log('[CHAT] Skipping DM: @' + dmUser);
-                    if (dmUser) checkedUsernames[dmUser.toLowerCase()] = true;
+                    currentName = findCurrentChatUsername();
+                    if (!currentName && retriesLeft > 0) {
+                        setTimeout(function () { processOpenedChat(retriesLeft - 1); }, 500);
+                        return;
+                    }
+                    log('[CHAT] Current chat username: "' + currentName + '" (target: "' + userName + '")');
+                }
+
+                var nameKey = currentName ? currentName.toLowerCase().trim() : '';
+
+                if (nameKey && checkedUsernames[nameKey]) {
                     chatIndex++;
                     checkNextChat();
                     return;
                 }
-            } else {
-                // DM mode: get username from header
-                currentName = findCurrentChatUsername();
-                log('[CHAT] Current chat username: "' + currentName + '" (target: "' + userName + '")');
-            }
 
-            var nameKey = currentName ? currentName.toLowerCase().trim() : '';
+                if (nameKey) {
+                    checkedUsernames[nameKey] = true;
+                    newItemsFound++;
+                }
 
-            if (nameKey && checkedUsernames[nameKey]) {
+                if (isTargetUser(currentName)) {
+                    found = true;
+                    log('[CHAT] MATCH — Found ' + (isGroup ? 'group' : 'target user') + ': "' + currentName + '"');
+                    sendMessageViaButton();
+                    return;
+                }
+
                 chatIndex++;
                 checkNextChat();
-                return;
+            } catch (err) {
+                log('[CHAT] Exception in processOpenedChat: ' + err.message);
+                reportError('Exception in chat traversal: ' + err.message);
             }
+        };
 
-            if (nameKey) {
-                checkedUsernames[nameKey] = true;
-                newItemsFound++;
-            }
-
-            if (isTargetUser(currentName)) {
-                found = true;
-                log('[CHAT] MATCH — Found ' + (isGroup ? 'group' : 'target user') + ': "' + currentName + '"');
-                sendMessageViaButton();
-                return;
-            }
-
-            chatIndex++;
-            checkNextChat();
+        setTimeout(function () {
+            processOpenedChat(2);
         }, 1500);
     };
 
-    // ── Initialization with Checkpoint Retries ───────────────────────────────
+    // ── Initialization with Polling ──────────────────────────────────────────
 
     var init = function () {
         try {
@@ -654,44 +742,32 @@
                 return;
             }
 
-            log('[INIT] Waiting 3s for page stabilization...');
-            setTimeout(function () {
-                // ── Checkpoint: 3 seconds ──
-                log('[CHECKPOINT-3S] Checking for chat items (attempt 1)...');
+            var initAttempts = 0;
+            var maxInitAttempts = 20; // 20 * 1.5s = 30s
+            var pollForItems = function () {
+                initAttempts++;
+                log('[INIT] Checking for chat items (attempt ' + initAttempts + '/' + maxInitAttempts + ')...');
                 chatItems = findChatItems();
-                log('[CHECKPOINT-3S] Found ' + chatItems.length + ' chat items');
+                log('[INIT] Found ' + chatItems.length + ' chat items');
 
                 if (chatItems.length > 0) {
-                    log('[CHECKPOINT-3S] Items found, starting chat scan');
+                    log('[INIT] Items found, starting chat scan');
                     checkNextChat();
                     return;
                 }
 
-                // Zero items — run diagnostics and retry
-                log('[CHECKPOINT-3S] Zero items found, running full diagnostics...');
-                dumpFullDiagnostics();
-                log('[CHECKPOINT-3S] Scheduling retry in 5 more seconds...');
-
-                setTimeout(function () {
-                    // ── Checkpoint: 8 seconds total ──
-                    log('[CHECKPOINT-8S] Checking for chat items (attempt 2 after 8s total)...');
-                    chatItems = findChatItems();
-                    log('[CHECKPOINT-8S] Found ' + chatItems.length + ' chat items');
-
-                    if (chatItems.length > 0) {
-                        log('[CHECKPOINT-8S] Items found on retry, starting chat scan');
-                        checkNextChat();
-                        return;
-                    }
-
-                    log('[CHECKPOINT-8S] Still zero items after 8s, running full diagnostics again...');
+                if (initAttempts >= maxInitAttempts) {
+                    log('[INIT] Still zero items after ' + (maxInitAttempts * 1.5) + 's, running diagnostics...');
                     dumpFullDiagnostics();
-                    log('[CHECKPOINT-8S] Giving up - reporting error');
-                    reportError('No chat items found after 8s wait');
+                    reportError('No chat items found after 30s wait');
+                    return;
+                }
 
-                }, 5000);
+                setTimeout(pollForItems, 1500);
+            };
 
-            }, 3000);
+            log('[INIT] Waiting 2s for page stabilization...');
+            setTimeout(pollForItems, 2000);
 
         } catch (e) {
             log('[INIT] EXCEPTION: ' + e.message);

@@ -197,7 +197,7 @@ public static class TikTokWebViewHelper
             return result;
         }
 
-        if (urlLower.Contains("tiktok.com/messages") ||
+        if (WebViewNavigationPolicy.IsInbox(urlLower) ||
             urlLower.Contains("tiktok.com/foryou") ||
             urlLower.Contains("tiktok.com/@"))
         {
