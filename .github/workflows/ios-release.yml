@@ -10,6 +10,10 @@ on:
         description: 'Version number (e.g., 1.0.0)'
         required: true
         default: '1.0.0'
+      release_tag:
+        description: 'Existing release tag to attach the IPA to (leave empty to create ios-v<version>)'
+        required: false
+        default: ''
 
 env:
   DOTNET_VERSION: '9.0.203'
@@ -61,10 +65,18 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             VERSION="${{ github.event.inputs.version }}"
+            RELEASE_TAG="${{ github.event.inputs.release_tag }}"
           else
             VERSION="${GITHUB_REF_NAME#ios-v}"
+            RELEASE_TAG=""
           fi
-          TAG="ios-v${VERSION}"
+          # When Android dispatched this run, the tag already exists and the IPA belongs in that
+          # same release, so the APK and the IPA are downloaded from one page.
+          if [ -n "$RELEASE_TAG" ]; then
+            TAG="$RELEASE_TAG"
+          else
+            TAG="ios-v${VERSION}"
+          fi
           VERSION_CODE=$(python3 - <<PY
           parts = "$VERSION".split(".")
           while len(parts) < 3:
@@ -127,6 +139,10 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Commit AltStore source JSON
+        # The IPA is already attached to the release by the step above, so a repository that
+        # protects `main` (or a fork whose token cannot push there) must not turn a successful
+        # build into a failed run. AltStore only needs the file in the repo eventually.
+        continue-on-error: true
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

@@ -120,6 +120,94 @@ public class ScriptPreparationTests
         Assert.Contains("window.__saverScan", prepared);
     }
 
+    [Fact]
+    public void TheBundledSendingScriptSurvivesPreparation()
+    {
+        // The sending script is flattened and then evaluated in the WebView. A trailing comment on a
+        // line of code survives the comment-stripping step (only lines that *start* with // are
+        // removed) and, once the newlines are gone, swallows every statement after it. The result is
+        // a SyntaxError at parse time: the WebView accepts the call, nothing runs, and the app reports
+        // a timeout - which is exactly how the Business Suite sends failed silently.
+        var path = FindRawScript("tiktok_automation.js");
+        if (path is null)
+            return;
+
+        var prepared = ScriptPreparation.ForInjection(System.IO.File.ReadAllText(path));
+
+        Assert.DoesNotContain("\n", prepared);
+        Assert.EndsWith("})();", prepared);
+
+        // Every // left in the prepared script has to be inside a string or a regex, never a comment.
+        // A comment would leave the text after it unexecuted, so the closing of the IIFE is the tell:
+        // if a comment swallowed the tail, the script no longer ends where it should.
+        Assert.Contains("init(); })();", prepared);
+    }
+
+    [Theory]
+    [InlineData("tiktok_read_contacts.js")]
+    [InlineData("tiktok_automation.js")]
+    public void ABundledScriptHasNoTrailingCommentOnACodeLine(string fileName)
+    {
+        // Catches the mistake at its source rather than after flattening, where the symptom is a
+        // truncated script that is hard to trace back to one line.
+        var path = FindRawScript(fileName);
+        if (path is null)
+            return;
+
+        var lines = System.IO.File.ReadAllLines(path);
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            var trimmed = line.TrimStart();
+
+            if (trimmed.StartsWith("//"))
+                continue;
+
+            // A // that is not inside a quoted string is a trailing comment.
+            var inSingle = false;
+            var inDouble = false;
+
+            for (var c = 0; c < line.Length - 1; c++)
+            {
+                var ch = line[c];
+
+                if (ch == '\\' && (inSingle || inDouble))
+                {
+                    c++;
+                    continue;
+                }
+
+                if (ch == '\'' && !inDouble) inSingle = !inSingle;
+                else if (ch == '"' && !inSingle) inDouble = !inDouble;
+                else if (ch == '/' && line[c + 1] == '/' && !inSingle && !inDouble)
+                {
+                    // Assert.Fail does not exist in this xUnit version, so the message goes through
+                    // Assert.True, which reports it the same way.
+                    Assert.True(false,
+                        $"{fileName} line {i + 1} has a trailing comment. The script is flattened onto " +
+                        $"one line before injection, so everything after it would be commented out: {line.Trim()}");
+                }
+            }
+        }
+    }
+
+    private static string? FindRawScript(string fileName)
+    {
+        var relative = System.IO.Path.Combine(
+            "src", "TiktokStreakSaver", "Resources", "Raw", fileName);
+
+        var candidates = new[]
+        {
+            System.IO.Path.GetFullPath(System.IO.Path.Combine(
+                AppContext.BaseDirectory, "..", "..", "..", "..", "..", relative)),
+            System.IO.Path.GetFullPath(relative),
+            System.IO.Path.GetFullPath(System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), relative)),
+        };
+
+        return candidates.FirstOrDefault(System.IO.File.Exists);
+    }
+
     private static string? FindScannerScript()
     {
         var relative = System.IO.Path.Combine(

@@ -58,6 +58,53 @@
         return window;
     };
 
+    // ── Business Suite detection ─────────────────────────────────────────────
+    //
+    // TikTok Business Suite serves the inbox in an iframe whose composer is a Draft.js editor that
+    // rejects the DOM-level typing the classic inbox accepts. Everything below this marker is used
+    // only when that inbox is detected; the classic path is left exactly as it was, because it is
+    // known to work and is what most accounts still get.
+    //
+    // How the two differ, measured on the live page:
+    //   - Writing to the composer with execCommand leaves the Draft.js state empty. The text is in
+    //     the DOM but the editor does not know about it, so no send button ever appears and the
+    //     component throws while reconciling, replacing the chat panel with "Something went wrong".
+    //     The state has to be set through the editor instance instead.
+    //   - The send control is an <svg role="button" data-e2e="dm-new-send-btn"> that only exists once
+    //     the composer holds text, and it has no click() method.
+    //   - The page also contains a button[type="submit"], but it belongs to the search box. Clicking
+    //     it as a fallback runs a search instead of sending, so it must never be used here.
+
+    var isBusinessInbox = function () {
+        try {
+            if (window.location.href.indexOf('business-suite') !== -1) return true;
+            // The inbox frame itself carries scene=business even when the outer URL does not.
+            if (/[?&]scene=business(&|$)/.test(window.location.href)) return true;
+            // The classic inbox renders in the page itself. Business Suite renders it inside a frame,
+            // so the presence of that frame is what tells the two apart when the URL is ambiguous.
+            return !!document.querySelector('iframe[data-testid*="message-index"]');
+        } catch (e) {
+            return false;
+        }
+    };
+
+    var business = isBusinessInbox();
+
+    // Whether the chat panel has been replaced by TikTok's error state.
+    //
+    // When the composer is written to the wrong way, TikTok unmounts the whole chat panel and puts
+    // "Something went wrong" in its place - the chat box element itself is gone, which is why this
+    // checks both: the error text alone could be an unrelated banner, and the missing panel alone is
+    // also true before any chat has been opened.
+    var chatPanelCrashed = function () {
+        var doc = getRootDoc();
+        var body = (doc.body && doc.body.innerText) || '';
+
+        if (body.indexOf('Something went wrong') === -1) return false;
+
+        return !doc.querySelector('[data-e2e="dm-new-chatbox"]');
+    };
+
     // ── Environment & Diagnostics ────────────────────────────────────────────
 
     var dumpEnvironment = function () {
@@ -432,8 +479,54 @@
         return null;
     };
 
+    // Writes the message into a Draft.js composer by handing the editor a new state.
+    //
+    // This is the only way that works on Business Suite. Draft.js keeps its own copy of the text in
+    // editorState and renders from it; inserting characters into the DOM behind its back leaves the
+    // two out of step, so the editor reports an empty document (no send button appears) and throws
+    // while reconciling the nodes it did not expect.
+    //
+    // Returns true when the editor accepted the state.
+    var typeMessageIntoDraftEditor = function (messageInput) {
+        var draftEditor = findDraftEditor(messageInput);
+
+        if (!draftEditor || !draftEditor.props) {
+            log('[TYPE] Draft editor instance not reachable from the composer');
+            return false;
+        }
+
+        try {
+            var currentState = draftEditor.props.editorState;
+            var ContentState = currentState.getCurrentContent().constructor;
+            var EditorState = currentState.constructor;
+
+            // createFromText builds the block structure Draft.js expects, so the editor re-renders
+            // from its own state and every listener (including the send button) sees the text.
+            var nextState = EditorState.createWithContent(ContentState.createFromText(message));
+            draftEditor.props.onChange(nextState);
+
+            log('[TYPE] Draft editor state set via onChange');
+            return true;
+        } catch (e) {
+            log('[TYPE] Draft editor state update failed: ' + (e && e.message ? e.message : e));
+            return false;
+        }
+    };
+
     var typeMessage = function (messageInput, callback) {
         log('[TYPE] Starting typeMessage...');
+
+        // Business Suite: hand the text to the editor instead of the DOM. Falling back to the DOM
+        // route here is not an option - it is what leaves the panel showing "Something went wrong".
+        if (business) {
+            if (!typeMessageIntoDraftEditor(messageInput)) {
+                reportError('Could not type into the message composer');
+                return;
+            }
+
+            setTimeout(callback, 300);
+            return;
+        }
 
         var tryExecCommand = function () {
             log('[TYPE] Using execCommand insertText...');
@@ -471,9 +564,62 @@
         tryExecCommand();
     };
 
+    // Business Suite send: the control is an <svg role="button"> that React listens to, and it has no
+    // click() method of its own. Dispatching a bubbling click at it is what reaches the handler; the
+    // classic path's extra parent clicks are deliberately not repeated here, because a second click
+    // on an already-empty composer is a second send.
+    //
+    // Returns true when a click was dispatched.
+    var clickBusinessSendButton = function () {
+        var doc = getRootDoc();
+        var win = getRootWin();
+        var sendBtn = doc.querySelector('[data-e2e="dm-new-send-btn"]') ||
+            doc.querySelector('[data-e2e="dm-new-send-btn"] [role="button"]');
+
+        if (!sendBtn) {
+            log('[SEND] No Business Suite send button (composer still empty?)');
+            return false;
+        }
+
+        log('[SEND] Clicking Business Suite send button (' + sendBtn.tagName + ')');
+        sendBtn.dispatchEvent(new (win.MouseEvent || MouseEvent)('click', {
+            bubbles: true,
+            cancelable: true,
+            view: win,
+            button: 0
+        }));
+        return true;
+    };
+
     var sendMessage = function (messageInput) {
         var doc = getRootDoc();
         var win = getRootWin();
+
+        if (business) {
+            if (clickBusinessSendButton()) {
+                return;
+            }
+
+            log('[SEND] Business Suite send button unavailable, pressing Enter...');
+            var businessKeyEvent = win.KeyboardEvent || KeyboardEvent;
+            messageInput.dispatchEvent(new businessKeyEvent('keydown', {
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13,
+                which: 13,
+                bubbles: true,
+                cancelable: true
+            }));
+            messageInput.dispatchEvent(new businessKeyEvent('keyup', {
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13,
+                which: 13,
+                bubbles: true
+            }));
+            return;
+        }
+
         var sendBtn = doc.querySelector('[data-e2e*="send"]') ||
             doc.querySelector('[data-e2e*="Send"]') ||
             doc.querySelector('button[type="submit"]');
@@ -512,7 +658,14 @@
 
     // ── Result Reporting ─────────────────────────────────────────────────────
 
+    // The app treats one callback as one finished friend and moves on, so a second callback for the
+    // same injection would make it retry a message that may already have been delivered. The
+    // watchdog can fire while a send is still in flight, which is exactly that case.
+    var resultReported = false;
+
     var reportSuccess = function () {
+        if (resultReported) return;
+        resultReported = true;
         clearWatchdog();
         log('[RESULT] SUCCESS — Message sent to ' + userName);
         if (typeof StreakApp !== 'undefined') {
@@ -521,11 +674,26 @@
     };
 
     var reportError = function (errorMessage) {
+        if (resultReported) return;
+        resultReported = true;
         clearWatchdog();
         log('[RESULT] FAIL — ' + errorMessage);
         if (typeof StreakApp !== 'undefined') {
             StreakApp.onMessageSent(userName, false, errorMessage);
         }
+    };
+
+    // Reads the composer as it is now, rather than the node captured before sending.
+    //
+    // Draft.js re-renders its content on send, so the element handed to us before typing can be
+    // detached by the time the message is on its way. Returns null when there is no composer left,
+    // which is a distinct outcome from an empty one.
+    var readComposerText = function () {
+        var doc = getRootDoc();
+        var editor = doc.querySelector('[contenteditable="true"][role="textbox"]') ||
+            doc.querySelector('[class*="DraftEditor-editorContainer"] [contenteditable="true"]');
+        if (!editor) return null;
+        return (editor.textContent || '').trim();
     };
 
     // ── Chat Processing ──────────────────────────────────────────────────────
@@ -555,6 +723,36 @@
             }
 
             sendMessage(messageInput);
+
+            if (business) {
+                // The composer node captured before typing is usually detached by the time Draft.js
+                // has re-rendered, so the outcome is read from the live composer. A crashed panel
+                // means the message did not go out: reporting success there is how a broken send
+                // used to look like a delivered one.
+                setTimeout(function () {
+                    if (chatPanelCrashed()) {
+                        log('[VERIFY] Chat panel shows an error after sending');
+                        if (typeof StreakApp !== 'undefined') {
+                            StreakApp.reportVerification(false);
+                        }
+                        reportError('Chat panel failed after send');
+                        return;
+                    }
+
+                    var remaining = readComposerText();
+                    var confirmed = remaining === '';
+
+                    log('[VERIFY] Composer after send: ' + (remaining === null ? 'gone' : 'len=' + remaining.length) +
+                        ' -> ' + (confirmed ? 'confirmed' : 'unverified'));
+
+                    if (typeof StreakApp !== 'undefined') {
+                        StreakApp.reportVerification(confirmed);
+                    }
+
+                    reportSuccess();
+                }, 1500);
+                return;
+            }
 
             setTimeout(function () {
                 var remaining = (messageInput.textContent || '').trim();
@@ -732,6 +930,16 @@
             log('[INIT] Starting automation initialization...');
             dumpEnvironment();
             log('[INIT] Target user: ' + userName);
+            log('[INIT] Inbox type: ' + (business ? 'Business Suite' : 'classic'));
+
+            // A crashed chat panel never recovers on its own, and the app reuses the page for every
+            // friend in the run. Failing here names the real cause instead of letting every remaining
+            // friend fail one by one with "chat not found".
+            if (business && chatPanelCrashed()) {
+                log('[INIT] Chat panel is showing an error before we started');
+                reportError('Chat panel is broken - reload the messages page');
+                return;
+            }
 
             // Pre-check: if the target chat is already open (e.g. when re-injecting between friends)
             var preCheckName = isGroup ? findCurrentChatName() : findCurrentChatUsername();
@@ -742,8 +950,11 @@
                 return;
             }
 
+            // 20 attempts at 1.5s apart is the 30s the error message below quotes.
+            // This note must stay on its own line: the script is flattened onto one line before
+            // injection, and a trailing comment would comment out every statement after it.
             var initAttempts = 0;
-            var maxInitAttempts = 20; // 20 * 1.5s = 30s
+            var maxInitAttempts = 20;
             var pollForItems = function () {
                 initAttempts++;
                 log('[INIT] Checking for chat items (attempt ' + initAttempts + '/' + maxInitAttempts + ')...');

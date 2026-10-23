@@ -43,7 +43,9 @@ SIZE=$(stat -f%z "$IPA" 2>/dev/null || stat -c%s "$IPA")
 REPO="${GITHUB_REPOSITORY:-Jon2G/TiktokStreakSaver}"
 DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/StreakSaver.ipa"
 VERSION_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-SOURCE_URL="https://raw.githubusercontent.com/Jon2G/TiktokStreakSaver/main/dist/altstore/source.json"
+# Follows the repository doing the build, so a fork's source.json points at that fork's releases
+# instead of the upstream ones.
+SOURCE_URL="https://raw.githubusercontent.com/${REPO}/main/dist/altstore/source.json"
 
 read_app_permissions_from_ipa() {
   python3 - "$IPA" <<'PY'

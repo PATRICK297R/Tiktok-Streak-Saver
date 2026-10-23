@@ -12,7 +12,7 @@ on:
         default: '1.0.0'
 
 env:
-  DOTNET_VERSION: '9.0.x'
+  DOTNET_VERSION: '9.0.203'
   PROJECT_PATH: 'src/TiktokStreakSaver/TiktokStreakSaver.csproj'
 
 jobs:
@@ -24,6 +24,9 @@ jobs:
 
     - name: Checkout repository
       uses: actions/checkout@v4
+
+    - name: Apply CI SDK pin
+      run: cp global.ci.json global.json
 
     - name: Decode Keystore
       run: |
@@ -66,20 +69,21 @@ jobs:
     - name: Install MAUI workload
       run: dotnet workload install maui-android
 
-    - name: Install MAUI workload
-      run: dotnet workload install maui-ios
-
+    # maui-ios is deliberately NOT installed here: the iOS workload is macOS-only and asking for it
+    # on a Windows runner fails the job before any build starts. The iOS app has its own workflow.
     - name: Restore dependencies
-      run: dotnet restore ${{ env.PROJECT_PATH }}
+      run: dotnet restore ${{ env.PROJECT_PATH }} -p:TargetFrameworks=net9.0-android
 
     - name: Get version from tag
       id: get_version
       run: |
         if ("${{ github.event_name }}" -eq "workflow_dispatch") {
           echo "VERSION=${{ github.event.inputs.version }}" >> $env:GITHUB_OUTPUT
+          echo "TAG=v${{ github.event.inputs.version }}" >> $env:GITHUB_OUTPUT
         } else {
           $version = "${{ github.ref_name }}".TrimStart('v')
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          echo "TAG=${{ github.ref_name }}" >> $env:GITHUB_OUTPUT
         }
       shell: pwsh
 
@@ -87,9 +91,12 @@ jobs:
       run: |
         $ver = "${{ steps.get_version.outputs.VERSION }}"
         $parts = $ver -split '\.'
+        # A tag like v2.1 is legal and used to crash this step with an index error; missing parts
+        # are treated as 0, the same way the iOS workflow does it.
+        while ($parts.Count -lt 3) { $parts += '0' }
         $vc = [int]$parts[0] * 10000 + [int]$parts[1] * 100 + [int]$parts[2]
         Write-Host "Building with ApplicationVersion=$vc ApplicationDisplayVersion=$ver"
-        dotnet publish ${{ env.PROJECT_PATH }} -f net9.0-android -c Release -o ./artifacts -p:ApplicationVersion=$vc -p:ApplicationDisplayVersion=$ver
+        dotnet publish ${{ env.PROJECT_PATH }} -f net9.0-android -c Release -o ./artifacts -p:TargetFrameworks=net9.0-android -p:ApplicationVersion=$vc -p:ApplicationDisplayVersion=$ver
       shell: pwsh
       env:
         ANDROID_SIGNING_PASSWORD: ${{ secrets.ANDROID_SIGNING_PASSWORD }}
@@ -178,7 +185,7 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', github.event.inputs.version) || github.ref_name }}
+        tag_name: ${{ steps.get_version.outputs.TAG }}
         name: Streak Saver v${{ steps.get_version.outputs.VERSION }}
         generate_release_notes: true
         files: ./artifacts/*.apk
@@ -186,3 +193,34 @@ jobs:
         prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    # iOS publishes into the same release. Android creates it, so it has to run first, and iOS
+    # then waits for this workflow to finish before attaching the IPA. Without this the two
+    # platforms would land in separate releases and the IPA would be filed under an ios-v* tag
+    # nobody downloading the APK would think to look at.
+    - name: Release iOS build
+      if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+      uses: actions/github-script@v7
+      env:
+        IOS_ENABLED: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 != '' && secrets.IOS_DEVELOPMENT_TEAM != '' }}
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const version = '${{ steps.get_version.outputs.VERSION }}';
+          const tag = '${{ steps.get_version.outputs.TAG }}';
+
+          if (process.env.IOS_ENABLED !== 'true') {
+            core.notice(`Skipping iOS build for ${tag}: IOS_DISTRIBUTION_CERTIFICATE_BASE64 and/or IOS_DEVELOPMENT_TEAM are not set. See docs/ios-signing.md.`);
+            return;
+          }
+
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'ios-release.yml',
+            ref: 'main',
+            inputs: { version: version, release_tag: tag }
+          });
+
+          core.notice(`Dispatched iOS build for ${tag}. The IPA is attached to that release when it finishes.`);
+
