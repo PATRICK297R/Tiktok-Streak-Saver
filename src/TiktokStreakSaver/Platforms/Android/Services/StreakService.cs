@@ -549,7 +549,8 @@ public class StreakService : Service
             _webView.Settings.LoadWithOverviewMode = true;
             _webView.Settings.SetSupportZoom(false);
             _webView.Settings.BuiltInZoomControls = false;
-            _webView.Settings.SetInitialScale(100);
+            // SetInitialScale lives on the WebView, not on WebSettings.
+            _webView.SetInitialScale(100);
 
             var displayMetrics = Resources?.DisplayMetrics;
             var density = displayMetrics?.Density ?? 2.0f;
