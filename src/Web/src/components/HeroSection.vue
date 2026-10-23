@@ -2,7 +2,7 @@
 import { APK_URL, REPO_URL, RELEASES_URL } from '@/data/links'
 
 const iconUrl = `${import.meta.env.BASE_URL}imgs/icon.png`
-const heroShotUrl = `${import.meta.env.BASE_URL}imgs/Main_Secondary.jpeg`
+const heroShotUrl = `${import.meta.env.BASE_URL}imgs/Dashboard.jpeg`
 </script>
 
 <template>

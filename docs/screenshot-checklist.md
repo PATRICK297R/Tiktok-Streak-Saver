@@ -1,70 +1,39 @@
 # Screenshot checklist
 
-The screenshots used by the README and the project website are **out of date**. Every image currently
-in `docs/imgs/` and `src/Web/public/imgs/` was captured on or before **2026-05-01**, and the
-multi-page UI rewrite landed on **2026-05-11**.
+Status: **current**. All images in `src/Web/public/imgs/` were re-captured from a real
+device (OPPO CPH2591, 720x1612) on **2026-10-24**, against app version 2.5.5.
 
-| Image | Captured | Status |
+| Image | Screen | Status |
 | --- | --- | --- |
-| `main_screen.png` | 2026-04-19 | Out of date — shows the old single-page layout |
-| `Welcome.jpeg` | 2026-05-01 | Out of date — layout changed |
-| `Main_Secondary.jpeg` | 2026-05-01 | Out of date — layout changed |
-| `Settings.jpeg` | 2026-05-01 | Out of date — layout changed |
-| `Update_Screen.jpeg` | 2026-05-01 | Out of date — layout changed |
-| `Burst_Main.jpeg` | 2026-05-01 | **Wrong** — burst mode was removed |
-| `Burst_Secondary.jpeg` | 2026-05-01 | **Wrong** — burst mode was removed |
+| `Dashboard.jpeg` | Dashboard after a completed run (8/8, 100%) | Current |
+| `Dashboard_Live.jpeg` | Dashboard mid-run (3/8, Stop button visible) | Current |
+| `Friends.jpeg` | Friends list with per-chat health dots | Current |
+| `History.jpeg` | History with the success-rate chart | Current |
+| `Profile.jpeg` | Profile settings, showing two daily run times | Current |
+| `Import.jpeg` | Import from chats, review list | Current |
 
-## Why the burst images are wrong, not merely old
+## Removed
 
-Burst mode was deliberately dropped when the multi-page UI was ported in:
+`Burst_Main.jpeg`, `Burst_Secondary.jpeg`, `Main_Secondary.jpeg`, `Welcome.jpeg`,
+`Settings.jpeg` and `Update_Screen.jpeg` were deleted. Burst mode was dropped when the
+multi-page UI was ported in (`dc2469e`), so those two advertised a feature that no longer
+exists; the rest showed the old single-page layout.
 
-```
-dc2469e  Port multi-page UI from eulfn/streak-tiktok fork; drop burst mode and Windows TFM
-```
+## Still worth capturing
 
-There is no burst code left in the repository, yet the website kept advertising it with captions like
-*"Run streaks in seconds"*. Their references were removed from
-[`src/Web/src/data/screenshots.ts`](../src/Web/src/data/screenshots.ts); the image files were left on
-disk so the history stays intact.
+These would add to the gallery but are not required for it to be accurate:
 
-## Screens to capture
-
-The app is now organised as **Dashboard / Friends / History / Profile**, so the current set needs
-replacing with:
-
-1. **Login** — the TikTok WebView before signing in.
-2. **Dashboard** — the *Daily Automation Progress* card, with the progress bar and the
-   Sent Today / Success / Remaining figures.
-3. **Dashboard, run in progress** — the stop button and the progress notification.
-4. **Friends** — the list with enable toggles and the add field. Then the same list in **arranging
-   mode**: the `Reorder` toggle beside the Friends / Groups switch, the `Arranging the send order`
-   banner with its `Save order` and `Cancel` buttons (Save still greyed out until something moves), the
-   cards with their grab handles and the `disabled` marker, and ideally one card mid-drag with the
-   target card tinted. Also worth capturing: the **Send order** card, which is where the arrows live and
-   is hidden while the list is being arranged.
-5. **History** — the success-rate chart plus a run row (ideally one showing the `Test run` label).
-6. **Profile** — the settings: schedule, interval, streak risk alerts, test run, battery toggle.
-7. **Update dialog** — the in-app update prompt.
-8. **Import from your chats** — the page while the scan runs: the status card with its spinner, the
-   status line and the `N chats read, M checked` line under it, the three numbered steps, and the
-   `Run in background` and `Stop` buttons. Then the review list it offers: the rows with their tick
-   boxes, and a row opened for correction so the name, the username and the person-or-group choice are
-   all visible. Worth capturing alongside it: the notification that reports the scan's progress, and
-   the finished one that opens straight to this page when tapped.
-9. **Backup & Restore** — the Profile card, ideally with the result line showing what a restore added.
-
-Screenshots that show a feature added recently are worth including:
-
-- **Test run** — the History row labelled *Test run — nothing was sent*.
-- **Streak risk alert** — the notification, or the Profile toggle for it.
+- **Login** — the TikTok WebView before signing in. Needs a logged-out device.
+- **Update dialog** — the in-app prompt with its changelog.
+- **Streak risk alert** — the notification, or the Profile toggle.
+- **Backup & Restore** — the Profile card with a restore result line.
+- **Arranging mode** — the `Reorder` view with its grab handles and Save order button.
 
 ## Capturing
 
-Use a device or emulator at a normal phone resolution, in the theme the marketing images use. Save into
-both `docs/imgs/` and `src/Web/public/imgs/`, then update:
+Use a device at a normal phone resolution. Crop the Android status bar and resize to
+**738x1600**, which is what the current set uses, then save as JPEG (quality ~88) into
+`src/Web/public/imgs/`.
 
-- `README.md` — the image near the top
-- `src/Web/src/data/screenshots.ts` — the gallery and the "how it works" steps
-
-Once the images are replaced, delete the two `Burst_*.jpeg` files and the staleness note in
-`screenshots.ts`.
+Update `src/Web/src/data/screenshots.ts` for the gallery and the "how it works" steps, and
+`HeroSection.vue` for the hero image.
