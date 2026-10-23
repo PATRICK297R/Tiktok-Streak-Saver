@@ -10,6 +10,10 @@ on:
         description: 'Version number (e.g., 1.0.0)'
         required: true
         default: '1.0.0'
+      changelog:
+        description: 'Release notes (markdown). Leave empty to auto-generate a bare compare link.'
+        required: false
+        default: ''
 
 env:
   DOTNET_VERSION: '9.0.203'
@@ -187,7 +191,12 @@ jobs:
       with:
         tag_name: ${{ steps.get_version.outputs.TAG }}
         name: Streak Saver v${{ steps.get_version.outputs.VERSION }}
-        generate_release_notes: true
+        # The in-app update popup renders this body as the changelog, so an auto-generated
+        # "Full Changelog: <compare link>" leaves the popup with nothing to show. A written
+        # changelog wins when one is supplied; generate_release_notes stays as the fallback for
+        # tag pushes, which have no input to read.
+        body: ${{ github.event.inputs.changelog }}
+        generate_release_notes: ${{ github.event.inputs.changelog == '' }}
         files: ./artifacts/*.apk
         draft: false
         prerelease: false
