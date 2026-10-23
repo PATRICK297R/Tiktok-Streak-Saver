@@ -47,6 +47,21 @@ public class StreakService : Service
     public const string ExtraTargetFriendIds = "target_friend_ids";
 
     /// <summary>
+    /// Intent extra marking a run the user started by tapping Run Now.
+    /// <para>
+    /// A scheduled run honours the "already messaged today" cooldown; a manual run does not, because
+    /// the user is pressing the button precisely to send again. Carried per-intent so a later
+    /// scheduled run cannot inherit the exemption.
+    /// </para>
+    /// </summary>
+    public const string ExtraManualRun = "manual_run";
+
+    /// <summary>
+    /// True when this run was started by the user from the Dashboard rather than by the schedule.
+    /// </summary>
+    private bool _isManualRun;
+
+    /// <summary>
     /// When set, this run processes only these friend ids and ignores the "already sent today" skip.
     /// <para>
     /// A normal run skips anyone messaged today, which is what stops a double send. A retry exists
@@ -75,6 +90,38 @@ public class StreakService : Service
     /// and OnStartCommand to prevent overlapping runs.
     /// </summary>
     public static bool IsRunning => _isRunning;
+
+    /// <summary>
+    /// The run currently in flight, or null when nothing is running.
+    /// <para>
+    /// Published so the Dashboard and History can show progress as it happens. Both used to read
+    /// <see cref="SettingsService.GetRunHistory"/>, which only gains the run once CompleteService
+    /// has written it - so a five minute run showed an empty bar until the moment it finished, and
+    /// the per-chat results were invisible while they were being produced.
+    /// </para>
+    /// <para>
+    /// The list is mutated by the service thread while the UI reads it, so callers must snapshot
+    /// under <see cref="LiveRunLock"/> rather than enumerate it directly.
+    /// </para>
+    /// </summary>
+    public static StreakRunResult? LiveRun { get; private set; }
+
+    /// <summary>Guards <see cref="LiveRun"/> and its FriendResults while a run is in flight.</summary>
+    public static readonly object LiveRunLock = new();
+
+    /// <summary>
+    /// Snapshot of the in-flight run's per-chat results, safe to enumerate from the UI thread.
+    /// Returns an empty list when no run is active.
+    /// </summary>
+    public static List<FriendMessageResult> LiveRunResults()
+    {
+        lock (LiveRunLock)
+        {
+            return LiveRun is null
+                ? new List<FriendMessageResult>()
+                : LiveRun.FriendResults.ToList();
+        }
+    }
 
     private int _cooldownSkippedCount = 0;
 
@@ -240,6 +287,7 @@ public class StreakService : Service
         // A retry names the chats it wants. Captured before the mutex so a rejected duplicate start
         // cannot leave the ids behind for the next run.
         var targets = intent?.GetStringArrayListExtra(ExtraTargetFriendIds);
+        var manualRun = intent?.GetBooleanExtra(ExtraManualRun, false) ?? false;
 
         // ── Run-level mutex: ignore duplicate starts while a session is active ──
         // IMPORTANT: Do not StopSelf() here — a second start (e.g. alarm + Run now) would kill the in-flight run.
@@ -254,6 +302,7 @@ public class StreakService : Service
         }
 
         _targetFriendIds = targets is { Count: > 0 } ? new HashSet<string>(targets) : null;
+        _isManualRun = manualRun;
 
         // Start the WebView automation on main thread
         _mainHandler?.Post(StartWebViewAutomation);
@@ -412,6 +461,13 @@ public class StreakService : Service
             _runStopwatch = System.Diagnostics.Stopwatch.StartNew();
             _cooldownSkippedCount = 0;
 
+            // Published before the first send so the Dashboard can show "0 of N" the moment the run
+            // starts, instead of an empty bar that only fills once the run is already over.
+            lock (LiveRunLock)
+            {
+                LiveRun = _runResult;
+            }
+
             // Rehearsal mode is read once per run so toggling it mid-run cannot produce a mixture of
             // real and simulated sends in the same history entry.
             _dryRun = _settingsService?.GetDryRun() ?? false;
@@ -441,6 +497,17 @@ public class StreakService : Service
                 var isTargeted = _targetFriendIds is not null && _targetFriendIds.Contains(friend.Id);
                 if (_targetFriendIds is not null && !isTargeted)
                     continue;
+
+                // A manual Run Now ignores both cooldowns below. The user pressed the button to send
+                // again, so "already messaged today" is the expected state, not a reason to skip -
+                // honouring it turned the tap into a no-op that only reported "already sent". The
+                // scheduled path keeps both checks untouched, which is what prevents the 23-hour
+                // schedule from double-sending.
+                if (_isManualRun)
+                {
+                    _friendsToProcess.Add(friend);
+                    continue;
+                }
 
                 if (!isTargeted && friend.LastMessageSent.HasValue && friend.LastMessageSent.Value.Date == today)
                 {
@@ -838,6 +905,8 @@ public class StreakService : Service
                 ErrorMessage = error
             });
 
+            // Bumped under the lock so the Dashboard's snapshot never reads a half-added list.
+            PublishLiveProgress();
             _failureAttemptsForCurrentFriend = 0;
             _currentFriendIndex++;
             UpdateNotification(string.Format(Localization.T("Android_ProgressFailed"),
@@ -864,6 +933,7 @@ public class StreakService : Service
                 Verified = null,
             });
 
+            PublishLiveProgress();
             AdvanceToNextFriend(username);
             return;
         }
@@ -891,7 +961,24 @@ public class StreakService : Service
             Verified = SendVerification.ToVerifiedFlag(verification),
         });
 
+        PublishLiveProgress();
         AdvanceToNextFriend(username);
+    }
+
+    /// <summary>
+    /// Signals the UI that the in-flight run has a new result.
+    /// <para>
+    /// The Dashboard polls once a second, so this does not have to do anything itself; it exists to
+    /// hold <see cref="LiveRunLock"/> at the moment a result is appended, which is what keeps a
+    /// snapshot taken on the UI thread from seeing a list mid-mutation.
+    /// </para>
+    /// </summary>
+    private void PublishLiveProgress()
+    {
+        lock (LiveRunLock)
+        {
+            // No-op by design: the lock is the effect.
+        }
     }
 
     private void AdvanceToNextFriend(string username)
@@ -1121,6 +1208,13 @@ public class StreakService : Service
             lock (_runLock)
             {
                 _isRunning = false;
+            }
+
+            // The run is over and has been written to history, so the live copy must not linger -
+            // the Dashboard would otherwise keep showing it instead of the recorded history.
+            lock (LiveRunLock)
+            {
+                LiveRun = null;
             }
 
             CleanupWebView();

@@ -323,11 +323,16 @@ public partial class DashboardPage : ContentPage
         var history = _settingsService.GetRunHistory();
         var currentEnabledFriends = _settingsService.GetEnabledFriends();
 
+        // The in-flight run is not in history yet - CompleteService writes it - so without this the
+        // bar sat empty for the whole run and only filled at the moment it finished. Appending the
+        // live copy makes the bar, the counters and the per-chat state move as the run progresses.
+        var progressSource = WithLiveRun(history);
+
         // Summed across every run of the day rather than read off the newest entry, so a run that
         // skipped every friend (already messaged today) cannot reset the counters. See
         // DailyProgressCalculator for the full reasoning.
         var progress = DailyProgressCalculator.Calculate(
-            history, currentEnabledFriends.Count, DateTime.Today);
+            progressSource, currentEnabledFriends.Count, DateTime.Today);
 
         bool ranToday = progress.RanToday;
         int sentToday = progress.SentToday;
@@ -345,7 +350,35 @@ public partial class DashboardPage : ContentPage
         _normalProgressDrawable.IsDarkTheme = Application.Current?.RequestedTheme == AppTheme.Dark;
         OverviewProgressGraphicsView.Invalidate();
 
-        UpdateRetryFailedButton(history, currentEnabledFriends);
+        UpdateRetryFailedButton(progressSource, currentEnabledFriends);
+    }
+
+    /// <summary>
+    /// Today's history plus the run currently in flight, if there is one.
+    /// <para>
+    /// The live entry is a snapshot, not the service's own object: the service keeps appending to
+    /// that list while this is being read on the UI thread, and enumerating it directly would throw
+    /// when the collection changed mid-loop.
+    /// </para>
+    /// </summary>
+    private static List<StreakRunResult> WithLiveRun(List<StreakRunResult> history)
+    {
+        var combined = new List<StreakRunResult>(history);
+
+#if ANDROID
+        var liveResults = TiktokStreakSaver.Platforms.Android.Services.StreakService.LiveRunResults();
+        if (liveResults.Count > 0)
+        {
+            combined.Add(new StreakRunResult
+            {
+                RunTime = DateTime.Now,
+                DryRun = liveResults.All(r => r.DryRun),
+                FriendResults = liveResults,
+            });
+        }
+#endif
+
+        return combined;
     }
 
     /// <summary>

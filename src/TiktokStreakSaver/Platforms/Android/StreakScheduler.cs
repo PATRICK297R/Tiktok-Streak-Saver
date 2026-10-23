@@ -188,6 +188,16 @@ public static class StreakScheduler
     /// <summary>
     /// Run the service immediately. Returns false if automation is already running.
     /// </summary>
+    /// <summary>
+    /// Run the service immediately, because the user asked for it.
+    /// <para>
+    /// The extra matters. A scheduled run honours the "already messaged today" cooldown, which is
+    /// what stops the 23-hour schedule from double-sending. A manual Run Now is the opposite: the
+    /// user is pressing the button precisely because they want another send, so the cooldown must
+    /// not turn the tap into "already sent" and nothing else. Carrying that intent in the intent
+    /// keeps the two cases apart without a global flag that a later scheduled run could inherit.
+    /// </para>
+    /// </summary>
     public static bool RunNow(Context context)
     {
         if (StreakService.IsRunning)
@@ -201,6 +211,7 @@ public static class StreakScheduler
         }
 
         var serviceIntent = new Intent(context, typeof(StreakService));
+        serviceIntent.PutExtra(StreakService.ExtraManualRun, true);
 
         if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
             context.StartForegroundService(serviceIntent);

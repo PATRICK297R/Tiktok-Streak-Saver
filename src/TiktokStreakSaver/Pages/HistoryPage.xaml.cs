@@ -10,6 +10,9 @@ public partial class HistoryPage : ContentPage
 {
     private readonly SettingsService _settingsService;
     private readonly SuccessRateDrawable _chartDrawable;
+
+    /// <summary>Refreshes the live entry while a run is in flight; idle otherwise.</summary>
+    private IDispatcherTimer? _liveTimer;
     private bool _isExportingLogs = false;
 
     public HistoryPage()
@@ -37,6 +40,39 @@ public partial class HistoryPage : ContentPage
             this.TranslateTo(0, 0, 280, Easing.SinInOut));
 
         LoadStats();
+        LoadHistory();
+
+        // Ticks only while a run is actually in flight, so a finished page costs nothing. The check
+        // is cheap (a lock and a count) and the page reloads only when the number of results moved.
+        _liveTimer ??= Dispatcher.CreateTimer();
+        _liveTimer.Interval = TimeSpan.FromSeconds(1);
+        _liveTimer.Tick -= OnLiveTimerTick;
+        _liveTimer.Tick += OnLiveTimerTick;
+        _liveTimer.Start();
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        _liveTimer?.Stop();
+        if (_liveTimer != null)
+            _liveTimer.Tick -= OnLiveTimerTick;
+    }
+
+    private int _lastLiveCount = -1;
+
+    private void OnLiveTimerTick(object? sender, EventArgs e)
+    {
+        var count = GetLiveResults().Count;
+
+        // Nothing running and nothing shown: leave the page alone.
+        if (count == 0 && _lastLiveCount <= 0)
+            return;
+
+        if (count == _lastLiveCount)
+            return;
+
+        _lastLiveCount = count;
         LoadHistory();
     }
 
@@ -95,10 +131,38 @@ public partial class HistoryPage : ContentPage
     private void LoadHistory()
     {
         var allHistory = _settingsService.GetRunHistory();
+
+        // The run in flight is not in history yet, so it is prepended as a live entry. That is what
+        // lets the page fill in chat by chat instead of showing nothing until the run is over.
+        var liveResults = GetLiveResults();
         var itemsToRemove = HistoryContainer.Children.Where(c => c != NoHistoryLabel).ToList();
         foreach (var item in itemsToRemove) HistoryContainer.Children.Remove(item);
-        NoHistoryLabel.IsVisible = allHistory.Count == 0;
+
+        NoHistoryLabel.IsVisible = allHistory.Count == 0 && liveResults.Count == 0;
+
+        if (liveResults.Count > 0)
+        {
+            HistoryContainer.Children.Add(CreateHistoryView(new StreakRunResult
+            {
+                RunTime = DateTime.Now,
+                DryRun = liveResults.All(r => r.DryRun),
+                FriendResults = liveResults,
+            }));
+        }
+
         foreach (var run in allHistory) HistoryContainer.Children.Add(CreateHistoryView(run));
+    }
+
+    /// <summary>
+    /// Per-chat results of the run currently in flight, or an empty list when nothing is running.
+    /// </summary>
+    private static List<FriendMessageResult> GetLiveResults()
+    {
+#if ANDROID
+        return TiktokStreakSaver.Platforms.Android.Services.StreakService.LiveRunResults();
+#else
+        return new List<FriendMessageResult>();
+#endif
     }
 
     private string ShortenErrorMessage(string? originalMsg)
