@@ -731,13 +731,66 @@ public partial class ProfilePage : ContentPage
             await Share.Default.RequestAsync(new ShareFileRequest
             {
                 Title = Localization.T("Prof_BackupShareTitle"),
-                File = new ShareFile(filePath, "application/json")
+                // text/plain, not application/json, on purpose.
+                //
+                // Share targets treat application/json as a structured payload and several of them
+                // (ZArchiver among them) re-pack it into a .zip on the way out, so the file the user
+                // gets back is streak-saver-backup-....zip holding a .json. Restore then rejects it as
+                // "not a Streak Saver backup", which is what happened in practice. text/plain is
+                // copied verbatim, so the .json extension and the contents survive.
+                File = new ShareFile(filePath, "text/plain")
             });
         }
         catch (Exception ex)
         {
             ShowBackupResult(string.Format(Localization.T("Prof_BackupFailed"), ex.Message), isError: true);
         }
+    }
+
+    /// <summary>
+    /// Reads a picked backup as text, unwrapping it first when a share target re-packed it as a zip.
+    /// <para>
+    /// The app has always written a plain .json, but earlier builds handed it to share targets as
+    /// application/json, and some of those responded by zipping it - the file that reached the user
+    /// was streak-saver-backup-....zip containing the .json. Refusing those would strand exactly the
+    /// backups people made before this was fixed, so the archive is opened and its single JSON entry
+    /// is read instead. A zip holding anything else is still refused, with a reason.
+    /// </para>
+    /// </summary>
+    private static async Task<string> ReadBackupTextAsync(FileResult picked)
+    {
+        using var stream = await picked.OpenReadAsync();
+
+        // Sniff the actual bytes rather than trusting the name: a zip renamed to .json, or a json
+        // served as application/zip, both occur, and the magic number is the only reliable signal.
+        var header = new byte[4];
+        var read = await stream.ReadAsync(header, 0, header.Length);
+        var isZip = read == 4 && header[0] == 0x50 && header[1] == 0x4B && header[2] == 0x03 && header[3] == 0x04;
+
+        if (stream.CanSeek)
+            stream.Position = 0;
+        else if (isZip)
+            throw new InvalidOperationException(AppStrings.T("Bk_NotBackup"));
+
+        if (!isZip)
+        {
+            using var reader = new System.IO.StreamReader(stream);
+            return await reader.ReadToEndAsync();
+        }
+
+        using var archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read, leaveOpen: true);
+
+        // The wrapper only ever contains the one file the user shared. Anything else is not a
+        // backup that was re-packed, so it is rejected rather than guessed at.
+        var entry = archive.Entries.FirstOrDefault(e =>
+            e.Name.EndsWith(".json", StringComparison.OrdinalIgnoreCase) && e.Length > 0);
+
+        if (entry is null)
+            throw new InvalidOperationException(AppStrings.T("Bk_NotBackup"));
+
+        using var entryStream = entry.Open();
+        using var entryReader = new System.IO.StreamReader(entryStream);
+        return await entryReader.ReadToEndAsync();
     }
 
     private async void OnRestoreClicked(object? sender, EventArgs e)
@@ -749,18 +802,19 @@ public partial class ProfilePage : ContentPage
                 PickerTitle = Localization.T("Prof_SelectBackupFile"),
                 FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
                 {
-                    { DevicePlatform.Android, new[] { "application/json", "*/*" } },
-                    { DevicePlatform.iOS, new[] { "public.json" } },
-                    { DevicePlatform.WinUI, new[] { ".json" } },
-                    { DevicePlatform.macOS, new[] { "json" } },
+                    // "*/*" is not a catch-all fallback here: older backups were handed to share
+                    // targets as application/json, and some of them (ZArchiver) wrapped the file in
+                    // a .zip. Those files are still perfectly good backups, so the picker has to let
+                    // the user reach them - UnwrapBackupIfZipped below handles the rest.
+                    { DevicePlatform.Android, new[] { "application/json", "application/zip", "*/*" } },
+                    { DevicePlatform.iOS, new[] { "public.json", "public.zip-archive" } },
+                    { DevicePlatform.WinUI, new[] { ".json", ".zip" } },
+                    { DevicePlatform.macOS, new[] { "json", "zip" } },
                 })
             });
             if (picked == null) return;
 
-            string json;
-            using (var stream = await picked.OpenReadAsync())
-            using (var reader = new System.IO.StreamReader(stream))
-                json = await reader.ReadToEndAsync();
+            var json = await ReadBackupTextAsync(picked);
 
             // Refused rather than half-applied when the file is unreadable or from a newer build.
             if (!AppBackupCodec.TryDeserialize(json, out var backup, out var codecError) || backup is null)

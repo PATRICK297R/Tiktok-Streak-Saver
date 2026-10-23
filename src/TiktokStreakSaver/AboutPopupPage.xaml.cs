@@ -515,10 +515,73 @@ blockquote{{
 
         ProgressLabel.Text = Localization.T("About_StartingInstaller");
 
+        // Android 8+ will not show the install prompt at all unless this app is allowed to install
+        // packages. Without the check the intent either throws or the system shows a permission
+        // screen with no explanation, which reads as "the update button is broken". Ask first, then
+        // carry on with the download that is already on disk.
+        if (!await EnsureCanInstallPackagesAsync())
+        {
+            _isDownloading = false;
+            InstallButton.IsEnabled = true;
+            LaterButton.IsEnabled = true;
+            InstallButton.Text = Localization.T("About_Install");
+            ProgressLabel.IsVisible = true;
+            ProgressLabel.Text = Localization.T("About_NeedInstallPermission");
+            return;
+        }
+
         TriggerApkInstall(apkPath);
 
-        // Close popup after handing off to the system installer
+        // The installer runs in its own task, so this popup is no longer the foreground window.
+        // Closing it here keeps the user from landing back on a stale "Downloading..." popup after
+        // the install completes and the app is restarted.
         await TryCloseAsync();
+    }
+
+    /// <summary>
+    /// True when this app is allowed to install packages, prompting the user once if it is not.
+    /// <para>
+    /// Always true below Android 8, where the permission does not exist. On 8+ the user has to grant
+    /// it from a system screen; there is no API to grant it silently, by design.
+    /// </para>
+    /// </summary>
+    private static async Task<bool> EnsureCanInstallPackagesAsync()
+    {
+#if ANDROID
+        if (!Android.OS.Build.VERSION.SdkInt.AtLeast(Android.OS.BuildVersionCodes.O))
+            return true;
+
+        var context = Android.App.Application.Context;
+        var packageManager = context.PackageManager;
+        if (packageManager is null || context.PackageName is null)
+            return true;
+
+        if (packageManager.CanRequestPackageInstalls())
+            return true;
+
+        var opened = await MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            try
+            {
+                var intent = new Android.Content.Intent(
+                    Android.Provider.Settings.ActionManageUnknownAppSources,
+                    Android.Net.Uri.Parse($"package:{context.PackageName}"));
+                intent.AddFlags(Android.Content.ActivityFlags.NewTask);
+                context.StartActivity(intent);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[StreakSaver] Could not open install-permission screen: {ex.Message}");
+                return false;
+            }
+        });
+
+        return opened && packageManager.CanRequestPackageInstalls();
+#else
+        await Task.CompletedTask;
+        return true;
+#endif
     }
 
     private void ShowDownloadError()
@@ -553,7 +616,9 @@ blockquote{{
     {
         try
         {
-            await Launcher.Default.OpenAsync("https://github.com/eulfn/streak-tiktok/releases/latest");
+            // Points at this fork's releases, not the upstream project it used to name - a user sent
+            // there would have downloaded someone else's build.
+            await Launcher.Default.OpenAsync("https://github.com/PATRICK297R/Tiktok-Streak-Saver/releases/latest");
         }
         catch { }
     }

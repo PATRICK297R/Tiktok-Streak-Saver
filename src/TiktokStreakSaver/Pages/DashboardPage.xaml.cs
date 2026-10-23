@@ -229,6 +229,17 @@ public partial class DashboardPage : ContentPage
                 Preferences.Default.Remove("UpdateJustInstalled");
                 Preferences.Default.Set("LastAppVersionSeen", currentVersion);
                 _isCheckingForUpdates = false;
+
+                // The installer replaces the APK underneath the running process. Android keeps this
+                // process alive, so the app carries on executing the code it was started with and the
+                // new version only takes effect after a restart. Saying so is better than letting the
+                // user believe the update did nothing.
+                await MainThread.InvokeOnMainThreadAsync(async () =>
+                    await DisplayAlert(
+                        Localization.T("About_UpdatedTitle"),
+                        string.Format(Localization.T("About_UpdatedBody"), currentVersion),
+                        Localization.T("Common_OK")));
+
                 await CheckUpdateOnlyAsync();
                 return;
             }

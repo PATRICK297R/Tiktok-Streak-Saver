@@ -5,8 +5,8 @@ using TiktokStreakSaver.Services;
 [Microsoft.Maui.Controls.Internals.Preserve(AllMembers = true)]
 public partial class PrivacyPage : ContentPage
 {
-    private const string PolicyUrl = "https://github.com/Jon2G/TiktokStreakSaver/blob/main/PRIVACY.md";
-    private const string IssuesUrl = "https://github.com/Jon2G/TiktokStreakSaver/issues";
+    private const string PolicyUrl = "https://github.com/PATRICK297R/Tiktok-Streak-Saver/blob/main/PRIVACY.md";
+    private const string IssuesUrl = "https://github.com/PATRICK297R/Tiktok-Streak-Saver/issues";
 
     public PrivacyPage()
     {
