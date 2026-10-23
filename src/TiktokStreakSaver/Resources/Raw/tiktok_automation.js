@@ -234,14 +234,44 @@
 
     // ── Chat Item Discovery ──────────────────────────────────────────────────
 
+    // Clicks an element whether or not it is an HTMLElement.
+    //
+    // TikTok's conversation rows are sometimes SVG or plain <div> nodes, which have no .click().
+    // Calling it unguarded threw "chatItem.click is not a function", and because that ran inside
+    // the traversal it aborted the whole friend instead of skipping one row. A synthetic MouseEvent
+    // is what React listens for anyway, so it drives the same handler the real click would.
+    var safeClick = function (el) {
+        if (!el) return false;
+        try {
+            if (typeof el.click === 'function') {
+                el.click();
+                return true;
+            }
+            var target = el;
+            if (target.dispatchEvent) {
+                target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                return true;
+            }
+        } catch (e) {
+            log('[CHAT] Click failed: ' + e.message);
+        }
+        return false;
+    };
+
     var findChatItems = function () {
         var doc = getRootDoc();
         // Primary: current TikTok DM selectors. TikTok renames these periodically, so the current
         // and the immediately preceding spellings are tried together rather than one at a time.
+        //
+        // Deliberately NOT a bare [data-e2e*='conversation']: that also matches the wrapper, the
+        // unread badge, the timestamp and the avatar inside every row, which turned 108 real rows
+        // into 108 elements of mixed type - and a <div> or <svg> has no .click(), so the traversal
+        // died on item 6 with "chatItem.click is not a function". Every selector here has to name a
+        // whole row.
         var items = doc.querySelectorAll(
-            "[data-e2e*='dm-new-conversation-item'], [data-e2e*='conversation-item'], [data-e2e*='conversation']");
+            "[data-e2e*='dm-new-conversation-item'], [data-e2e*='conversation-item']");
         if (items.length > 0) {
-            log('[FIND] Found ' + items.length + ' items via: conversation selectors');
+            log('[FIND] Found ' + items.length + ' items via: conversation item selectors');
             return items;
         }
 
@@ -851,7 +881,7 @@
                     }
                     if (isTargetUser(match[1])) {
                         log('[CHAT] MATCH — Found @' + match[1] + ' in item ' + (chatIndex + 1) + ' (pre-click)');
-                        chatItem.click();
+                        safeClick(chatItem);
                         found = true;
                         setTimeout(sendMessageViaButton, 1500);
                         return;
@@ -862,7 +892,7 @@
         }
 
         log('[CHAT] Clicking item ' + (chatIndex + 1) + '/' + chatItems.length);
-        chatItem.click();
+        safeClick(chatItem);
 
         var processOpenedChat = function (retriesLeft) {
             try {

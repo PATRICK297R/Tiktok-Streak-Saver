@@ -528,27 +528,33 @@ public class StreakService : Service
             _webView.Settings.DatabaseEnabled = true;
             _webView.Settings.CacheMode = CacheModes.Normal;
 
+            // Chromium suspends this WebView's JavaScript timers unless they are explicitly resumed.
+            // The automation script polls the chat list with setTimeout, so without this every poll
+            // after the first one is deferred by up to a minute, the run looks like "no chat items
+            // found", and every friend is reported as failed. ResumeTimers() is global, which is why
+            // TikTokWebViewHelper deliberately never calls PauseTimers() on the login WebView.
+            _webView.ResumeTimers();
+
             // Reuse the UA captured at login time so cookies stay valid; fall back to a modern Chrome desktop UA.
             var sessionService = new SessionService();
             var loginUa = sessionService.GetLoginUserAgent()
                 ?? "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
             _webView.Settings.UserAgentString = loginUa;
 
-            _webView.Settings.SetSupportZoom(true);
-            _webView.Settings.BuiltInZoomControls = true;
-
-            // Give the headless WebView a real viewport so TikTok's virtualized chat list
-            // actually renders its children. Without dimensions the WebView is 0x0 and
-            // lazy-rendered conversation items never appear.
-            //
             // Layout() takes PHYSICAL pixels, while TikTok picks its layout from CSS pixels. Asking
             // for 1920x1080 directly gave a 640x360 CSS viewport on a 3x-density phone - TikTok's
             // narrow layout, whose conversation rows these selectors do not match. Scaling by density
             // keeps the CSS viewport at 1920x1080 on every device.
-            _webView.Settings.UseWideViewPort = true;
-            _webView.Settings.LoadWithOverviewMode = true;
+            //
+            // The three settings below are the combination the upstream project settled on, and they
+            // matter together: with UseWideViewPort/LoadWithOverviewMode left ON, SetInitialScale is
+            // applied on top of the wide-viewport zoom and the page ends up laid out at a size TikTok
+            // does not expect - it serves a skeleton whose chat list never renders. Off, the explicit
+            // Layout() below is the only thing deciding the viewport.
             _webView.Settings.SetSupportZoom(false);
             _webView.Settings.BuiltInZoomControls = false;
+            _webView.Settings.UseWideViewPort = false;
+            _webView.Settings.LoadWithOverviewMode = false;
             // SetInitialScale lives on the WebView, not on WebSettings.
             _webView.SetInitialScale(100);
 

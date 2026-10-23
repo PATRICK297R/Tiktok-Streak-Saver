@@ -436,8 +436,8 @@ public partial class FriendsPage : ContentPage
         });
 
         // Health dot: red once a chat has failed three times in a row, amber after one or two, green
-        // when it last sent successfully. Only shown for enabled entries - a disabled chat is not being
-        // messaged, so its health would read as a problem the user cannot act on.
+        // when it last sent successfully. A disabled chat is skipped - it is not being messaged, so its
+        // health would read as a problem the user cannot act on.
         if (friend.IsEnabled)
             infoStack.Children.Add(BuildHealthRow(friend));
 
@@ -625,8 +625,10 @@ public partial class FriendsPage : ContentPage
         infoStack.Children.Add(new Label { Text = displayName, FontSize = 15, FontFamily = "InterSemiBold" });
         var subtitleText = friend.IsGroup ? Localization.T("Common_Group") : $"@{friend.Username}";
         infoStack.Children.Add(new Label { Text = subtitleText, FontSize = 13, TextColor = GetThemeColor("Gray400", "#8B8F96") });
-        if (friend.LastMessageSent.HasValue)
-            infoStack.Children.Add(new Label { Text = string.Format(Localization.T("Fr_LastSent"), friend.LastMessageSent.Value.ToString("MMM dd")), FontSize = 12, TextColor = GetThemeColor("Gray400", "#8B8F96") });
+
+        // The health line replaces the old "Last sent" label rather than sitting next to it: it already
+        // carries the last-sent date when things are healthy, and two date lines in one row is noise.
+        infoStack.Children.Add(BuildHealthRow(friend));
 
         // Shows at a glance that this entry sends something different, so a custom message is never
         // set by accident and forgotten.
