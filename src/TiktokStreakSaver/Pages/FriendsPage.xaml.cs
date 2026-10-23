@@ -435,6 +435,12 @@ public partial class FriendsPage : ContentPage
             TextColor = GetThemeColor("Gray400", "#8B8F96")
         });
 
+        // Health dot: red once a chat has failed three times in a row, amber after one or two, green
+        // when it last sent successfully. Only shown for enabled entries - a disabled chat is not being
+        // messaged, so its health would read as a problem the user cannot act on.
+        if (friend.IsEnabled)
+            infoStack.Children.Add(BuildHealthRow(friend));
+
         Grid.SetColumn(infoStack, 1);
         grid.Children.Add(infoStack);
 
@@ -442,6 +448,58 @@ public partial class FriendsPage : ContentPage
 
         AttachReorderDragAndDrop(border, friend);
         return border;
+    }
+
+    /// <summary>
+    /// One small coloured dot plus a plain-language reason, so the colour is never the only signal.
+    /// </summary>
+    private HorizontalStackLayout BuildHealthRow(FriendConfig friend)
+    {
+        Color dotColor;
+        string healthText;
+
+        if (friend.ConsecutiveFailures >= 3)
+        {
+            dotColor = GetThemeColor("DeleteColor", "#DC2626");
+            healthText = string.Format(Localization.T("Fr_HealthFailing"), friend.ConsecutiveFailures);
+        }
+        else if (friend.ConsecutiveFailures > 0)
+        {
+            dotColor = GetThemeColor("Warning", "#A87A2A");
+            healthText = string.Format(Localization.T("Fr_HealthWarning"), friend.ConsecutiveFailures);
+        }
+        else if (friend.LastMessageSent.HasValue)
+        {
+            dotColor = GetThemeColor("Success", "#22946E");
+            healthText = string.Format(Localization.T("Fr_HealthOk"), friend.LastMessageSent.Value.ToString("MMM dd"));
+        }
+        else
+        {
+            dotColor = GetThemeColor("Gray400", "#8B8F96");
+            healthText = Localization.T("Fr_HealthNeverSent");
+        }
+
+        var row = new HorizontalStackLayout { Spacing = 5, VerticalOptions = LayoutOptions.Center };
+
+        // An Ellipse keeps the dot a fixed size regardless of the text length next to it.
+        var dot = new Microsoft.Maui.Controls.Shapes.Ellipse
+        {
+            WidthRequest = 7,
+            HeightRequest = 7,
+            Fill = new SolidColorBrush(dotColor),
+            VerticalOptions = LayoutOptions.Center
+        };
+
+        row.Children.Add(dot);
+        row.Children.Add(new Label
+        {
+            Text = healthText,
+            FontSize = 11,
+            TextColor = dotColor,
+            VerticalOptions = LayoutOptions.Center
+        });
+
+        return row;
     }
 
     /// <summary>

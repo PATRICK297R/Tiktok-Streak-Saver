@@ -462,7 +462,7 @@ blockquote{{
         if (_isDownloading) return;
 
 #if IOS
-        var url = _apkDownloadUrl ?? "https://github.com/Jon2G/TiktokStreakSaver/releases/latest";
+        var url = _apkDownloadUrl ?? "https://github.com/PATRICK297R/Tiktok-Streak-Saver/releases/latest";
         await Launcher.OpenAsync(url);
         Preferences.Default.Set("LastRemoteVersionSeen", _assignedVersion);
         await TryCloseAsync();

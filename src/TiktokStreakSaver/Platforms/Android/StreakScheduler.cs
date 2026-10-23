@@ -211,6 +211,39 @@ public static class StreakScheduler
     }
 
     /// <summary>
+    /// Run the service for a specific set of friends, leaving the daily schedule untouched.
+    /// <para>
+    /// This is what "Retry failed" uses. A normal run deliberately skips anyone already messaged today,
+    /// which is the right behaviour for the schedule but wrong for a retry: the whole point is to reach
+    /// the chats that failed. Passing their ids lets the service process exactly those and nothing else.
+    /// </para>
+    /// <para>
+    /// Returns false when a run is already in flight, so a double tap cannot start two of them.
+    /// </para>
+    /// </summary>
+    public static bool RunFailedTargets(Context context, IEnumerable<string> friendIds)
+    {
+        if (StreakService.IsRunning)
+            return false;
+
+        var ids = friendIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToList();
+        if (ids.Count == 0)
+            return false;
+
+        // The schedule is deliberately not cancelled here: a retry is an extra run, not a replacement
+        // for the one already planned, so the next alarm must survive it.
+        var serviceIntent = new Intent(context, typeof(StreakService));
+        serviceIntent.PutStringArrayListExtra(StreakService.ExtraTargetFriendIds, ids);
+
+        if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
+            context.StartForegroundService(serviceIntent);
+        else
+            context.StartService(serviceIntent);
+
+        return true;
+    }
+
+    /// <summary>
     /// Request the running StreakService to stop gracefully.
     /// </summary>
     public static void StopService(Context context)

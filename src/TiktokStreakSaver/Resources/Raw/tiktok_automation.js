@@ -236,17 +236,23 @@
 
     var findChatItems = function () {
         var doc = getRootDoc();
-        // Primary: current TikTok DM selector
-        var items = doc.querySelectorAll("[data-e2e*='dm-new-conversation-item']");
+        // Primary: current TikTok DM selectors. TikTok renames these periodically, so the current
+        // and the immediately preceding spellings are tried together rather than one at a time.
+        var items = doc.querySelectorAll(
+            "[data-e2e*='dm-new-conversation-item'], [data-e2e*='conversation-item'], [data-e2e*='conversation']");
         if (items.length > 0) {
-            log('[FIND] Found ' + items.length + ' items via: dm-new-conversation-item');
+            log('[FIND] Found ' + items.length + ' items via: conversation selectors');
             return items;
         }
 
-        // Fallback selectors — TikTok periodically renames data-e2e values
+        // Fallback selectors — TikTok periodically renames data-e2e values.
+        // These stay specific on purpose: a broad class or role match clicks the wrong row.
         var fallbacks = [
+            "a[href*='/messages/']",
             "[data-e2e*='chat-list-item']",
-            "[data-e2e*='chat-item']"
+            "[data-e2e*='chat-item']",
+            "[class*='ConversationItem']",
+            "[class*='conversation-item']"
         ];
         for (var i = 0; i < fallbacks.length; i++) {
             try {

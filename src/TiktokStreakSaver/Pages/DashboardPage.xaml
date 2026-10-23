@@ -195,6 +195,21 @@
                             Clicked="OnMasterRunClicked"/>
                 </Grid>
 
+                <!-- Only shown when today's run left chats that failed: retrying is an extra run for
+                     exactly those, so it is deliberately a separate button from Run now. -->
+                <Button x:Name="RetryFailedButton"
+                        Text="{svc:Tr Dash_RetryFailed}"
+                        IsVisible="False"
+                        BackgroundColor="Transparent"
+                        BorderColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
+                        BorderWidth="1"
+                        TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
+                        FontFamily="InterSemiBold"
+                        FontSize="14"
+                        CornerRadius="16"
+                        HeightRequest="48"
+                        Clicked="OnRetryFailedClicked"/>
+
                 <Button x:Name="StopServiceButton"
                         Text="{svc:Tr Dash_StopProcessing}"
                         IsVisible="False"

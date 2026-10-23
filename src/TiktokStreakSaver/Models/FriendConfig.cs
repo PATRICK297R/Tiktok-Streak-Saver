@@ -42,6 +42,16 @@ public class FriendConfig
     public int FailureCount { get; set; }
 
     /// <summary>
+    /// Consecutive terminal send failures since the last confirmed success.
+    /// <para>
+    /// Separate from <see cref="FailureCount"/>, which only ever grows: a chat that failed twice last
+    /// week and then worked fine is not unhealthy today. This resets to zero on every success, which is
+    /// what lets the friends list show a health colour that means something.
+    /// </para>
+    /// </summary>
+    public int ConsecutiveFailures { get; set; }
+
+    /// <summary>
     /// If true, this entry represents a TikTok group chat matched by display name
     /// instead of by username (groups have no profile link / @handle).
     /// </summary>
@@ -81,6 +91,7 @@ public class FriendConfig
         LastMessageSent = LastMessageSent,
         SuccessCount = SuccessCount,
         FailureCount = FailureCount,
+        ConsecutiveFailures = ConsecutiveFailures,
         IsGroup = IsGroup,
         CustomMessage = CustomMessage
     };

@@ -22,6 +22,9 @@ public partial class DashboardPage : ContentPage
     private IDispatcherTimer? _statusTimer;
     private readonly NormalProgressDrawable _normalProgressDrawable;
 
+    /// <summary>Chats the retry button would run for, refreshed with the status labels.</summary>
+    private List<string> _retryableFailedIds = new();
+
     public DashboardPage()
     {
         InitializeComponent();
@@ -341,6 +344,74 @@ public partial class DashboardPage : ContentPage
         _normalProgressDrawable.Progress = progressFraction;
         _normalProgressDrawable.IsDarkTheme = Application.Current?.RequestedTheme == AppTheme.Dark;
         OverviewProgressGraphicsView.Invalidate();
+
+        UpdateRetryFailedButton(history, currentEnabledFriends);
+    }
+
+    /// <summary>
+    /// Shows the retry button only when today's runs left chats that failed and are still enabled.
+    /// <para>
+    /// A chat that already succeeded later in the day is not retryable: the day's progress counts each
+    /// chat once, so retrying it would send a second message for a streak that is already safe.
+    /// </para>
+    /// </summary>
+    private void UpdateRetryFailedButton(List<StreakRunResult> history, List<FriendConfig> enabledFriends)
+    {
+#if IOS
+        // Targeted retry starts the Android background service, which has no iOS equivalent.
+        RetryFailedButton.IsVisible = false;
+        _retryableFailedIds = new List<string>();
+        return;
+#else
+        _retryableFailedIds = GetRetryableFailedFriendIds(history, enabledFriends);
+        RetryFailedButton.IsVisible = _retryableFailedIds.Count > 0;
+#endif
+    }
+
+    /// <summary>
+    /// Ids of chats that failed today and have not succeeded since.
+    /// </summary>
+    internal static List<string> GetRetryableFailedFriendIds(
+        List<StreakRunResult> history, List<FriendConfig> enabledFriends)
+    {
+        if (history is null || enabledFriends is null)
+            return new List<string>();
+
+        var enabledIds = enabledFriends
+            .Where(f => f.IsEnabled)
+            .Select(f => f.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (enabledIds.Count == 0)
+            return new List<string>();
+
+        var today = DateTime.Today;
+        var failed = new HashSet<string>(StringComparer.Ordinal);
+        var succeeded = new HashSet<string>(StringComparer.Ordinal);
+
+        // Oldest first, so a later success can clear an earlier failure within the same day.
+        foreach (var run in history.Where(r => r.RunTime.Date == today).OrderBy(r => r.RunTime))
+        {
+            foreach (var result in run.FriendResults)
+            {
+                // A rehearsal sends nothing, so it can neither fail nor fix a chat.
+                if (result.DryRun)
+                    continue;
+
+                if (result.Success)
+                {
+                    succeeded.Add(result.FriendId);
+                    failed.Remove(result.FriendId);
+                }
+                else if (!string.IsNullOrEmpty(result.ErrorMessage))
+                {
+                    if (!succeeded.Contains(result.FriendId))
+                        failed.Add(result.FriendId);
+                }
+            }
+        }
+
+        return failed.Where(id => enabledIds.Contains(id)).ToList();
     }
 
     /// <summary>
@@ -444,6 +515,53 @@ public partial class DashboardPage : ContentPage
         var result = await Platforms.iOS.Services.IosStreakRunner.RunNowAsync(manual: true);
         await ShowIosRunResultAsync(result);
         UpdateStatus();
+#else
+        await DisplayAlert(Localization.T("Dash_Info"), Localization.T("Dash_AndroidOnly"), Localization.T("Common_OK"));
+#endif
+    }
+
+    /// <summary>
+    /// Runs only the chats that failed today, leaving the daily schedule and everyone else alone.
+    /// </summary>
+    private async void OnRetryFailedClicked(object? sender, EventArgs e)
+    {
+#if ANDROID
+        // Read fresh rather than trusting the cached list: the button may have been left over from a
+        // status refresh that happened before the user edited their friends.
+        var failedIds = GetRetryableFailedFriendIds(
+            _settingsService.GetRunHistory(), _settingsService.GetEnabledFriends());
+
+        if (failedIds.Count == 0)
+        {
+            RetryFailedButton.IsVisible = false;
+            await DisplayAlert(Localization.T("Dash_NothingToRetry"),
+                Localization.T("Dash_NothingToRetryBody"), Localization.T("Common_OK"));
+            return;
+        }
+
+        var confirm = await DisplayAlert(
+            Localization.T("Dash_RetryFailed"),
+            string.Format(Localization.T(failedIds.Count == 1 ? "Dash_ConfirmRetryOne" : "Dash_ConfirmRetryMany"), failedIds.Count),
+            Localization.T("Dash_Retry"), Localization.T("Common_Cancel"));
+        if (!confirm) return;
+
+        bool permissionGranted = await RequestNotificationPermission();
+        if (!permissionGranted) return;
+
+        var context = Platform.CurrentActivity ?? Android.App.Application.Context;
+        bool started = TiktokStreakSaver.Platforms.Android.StreakScheduler.RunFailedTargets(context, failedIds);
+
+        if (started)
+        {
+            await DisplayAlert(Localization.T("Dash_RetryStarted"),
+                Localization.T("Dash_RetryStartedBody"), Localization.T("Common_OK"));
+            UpdateStatus();
+        }
+        else
+        {
+            await DisplayAlert(Localization.T("Dash_AlreadyRunning"),
+                Localization.T("Dash_AlreadyRunningBody"), Localization.T("Common_OK"));
+        }
 #else
         await DisplayAlert(Localization.T("Dash_Info"), Localization.T("Dash_AndroidOnly"), Localization.T("Common_OK"));
 #endif

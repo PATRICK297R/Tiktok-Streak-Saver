@@ -44,14 +44,14 @@ public class UpdateInfo
 }
 
 /// <summary>
-/// Checks GitHub releases for updates (Jon2G/TiktokStreakSaver).
+/// Checks GitHub releases for updates (PATRICK297R/Tiktok-Streak-Saver).
 /// </summary>
 [Microsoft.Maui.Controls.Internals.Preserve(AllMembers = true)]
 public class UpdateService
 {
     private static readonly HttpClient HttpClient = new();
-    private const string RepoOwner = "Jon2G";
-    private const string RepoName = "TiktokStreakSaver";
+    private const string RepoOwner = "PATRICK297R";
+    private const string RepoName = "Tiktok-Streak-Saver";
     private static readonly string ApiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
 
     static UpdateService()

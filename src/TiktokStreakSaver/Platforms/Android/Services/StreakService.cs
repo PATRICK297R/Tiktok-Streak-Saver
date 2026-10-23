@@ -41,6 +41,21 @@ public class StreakService : Service
     private readonly List<string> _disabledUsernames = new();
     private const string UserNotFoundError = "User not found in chat list";
 
+    /// <summary>
+    /// Intent extra naming the chats a retry should process. Absent for a normal scheduled run.
+    /// </summary>
+    public const string ExtraTargetFriendIds = "target_friend_ids";
+
+    /// <summary>
+    /// When set, this run processes only these friend ids and ignores the "already sent today" skip.
+    /// <para>
+    /// A normal run skips anyone messaged today, which is what stops a double send. A retry exists
+    /// precisely because those chats failed, so the skip has to be bypassed for them - and only them,
+    /// which is why the ids are carried rather than a simple "ignore cooldown" flag.
+    /// </para>
+    /// </summary>
+    private HashSet<string>? _targetFriendIds;
+
     // ── Randomized Normal Messages state ──
     private List<string>? _shuffledNormalMessages;
     private int _normalMessageIndex = 0;
@@ -222,6 +237,10 @@ public class StreakService : Service
         // Ensure we're in foreground mode (in case OnCreate didn't complete it)
         StartForegroundServiceImmediate();
 
+        // A retry names the chats it wants. Captured before the mutex so a rejected duplicate start
+        // cannot leave the ids behind for the next run.
+        var targets = intent?.GetStringArrayListExtra(ExtraTargetFriendIds);
+
         // ── Run-level mutex: ignore duplicate starts while a session is active ──
         // IMPORTANT: Do not StopSelf() here — a second start (e.g. alarm + Run now) would kill the in-flight run.
         lock (_runLock)
@@ -233,6 +252,8 @@ public class StreakService : Service
             }
             _isRunning = true;
         }
+
+        _targetFriendIds = targets is { Count: > 0 } ? new HashSet<string>(targets) : null;
 
         // Start the WebView automation on main thread
         _mainHandler?.Post(StartWebViewAutomation);
@@ -415,7 +436,13 @@ public class StreakService : Service
 
             foreach (var friend in allEnabled)
             {
-                if (friend.LastMessageSent.HasValue && friend.LastMessageSent.Value.Date == today)
+                // A retry names its chats. Everything else is out of scope for this run, including
+                // chats that would otherwise be processed - a retry must not turn into a full run.
+                var isTargeted = _targetFriendIds is not null && _targetFriendIds.Contains(friend.Id);
+                if (_targetFriendIds is not null && !isTargeted)
+                    continue;
+
+                if (!isTargeted && friend.LastMessageSent.HasValue && friend.LastMessageSent.Value.Date == today)
                 {
                     _cooldownSkippedCount++;
                     AppLog("SKIP", $"@{friend.Username}",
@@ -428,7 +455,11 @@ public class StreakService : Service
                 // message on the same friend - the pile-up this record exists to prevent - so the entry is
                 // left alone for the rest of the day. A definite failure is not skipped: nothing was sent,
                 // so a retry is safe.
-                if (durableStates.TryGetValue(friend.Id, out var outcome) && outcome != PendingSendState.Failed)
+                //
+                // A targeted retry is the exception: the user explicitly asked for these chats, so the
+                // durable "sent" entry is cleared and the send is allowed. The cooldown above still
+                // protects everything the user did not name.
+                if (!isTargeted && durableStates.TryGetValue(friend.Id, out var outcome) && outcome != PendingSendState.Failed)
                 {
                     _cooldownSkippedCount++;
                     AppLog("SKIP", $"@{friend.Username}", outcome == PendingSendState.Sent
@@ -438,6 +469,12 @@ public class StreakService : Service
                 }
 
                 _friendsToProcess.Add(friend);
+            }
+
+            if (_targetFriendIds is not null)
+            {
+                AppLog("SYSTEM", "-",
+                    $"Targeted retry: {_friendsToProcess.Count} of {_targetFriendIds.Count} requested chats are enabled");
             }
 
             // Yesterday's records cannot affect today, so they are dropped rather than kept forever.
@@ -503,9 +540,20 @@ public class StreakService : Service
             // Give the headless WebView a real viewport so TikTok's virtualized chat list
             // actually renders its children. Without dimensions the WebView is 0x0 and
             // lazy-rendered conversation items never appear.
+            //
+            // Layout() takes PHYSICAL pixels, while TikTok picks its layout from CSS pixels. Asking
+            // for 1920x1080 directly gave a 640x360 CSS viewport on a 3x-density phone - TikTok's
+            // narrow layout, whose conversation rows these selectors do not match. Scaling by density
+            // keeps the CSS viewport at 1920x1080 on every device.
             _webView.Settings.UseWideViewPort = true;
             _webView.Settings.LoadWithOverviewMode = true;
-            _webView.Layout(0, 0, 1920, 1080);
+            _webView.Settings.SetSupportZoom(false);
+            _webView.Settings.BuiltInZoomControls = false;
+            _webView.Settings.SetInitialScale(100);
+
+            var displayMetrics = Resources?.DisplayMetrics;
+            var density = displayMetrics?.Density ?? 2.0f;
+            _webView.Layout(0, 0, (int)(1920 * density), (int)(1080 * density));
 
             var cookieManager = CookieManager.Instance;
             cookieManager?.SetAcceptCookie(true);
@@ -760,6 +808,7 @@ public class StreakService : Service
             }
 
             friend.FailureCount++;
+            friend.ConsecutiveFailures++;
             AppLog("FAIL", label, error);
 
             bool skipUnreachable = _settingsService.GetSkipUnreachableUsers();
@@ -814,6 +863,9 @@ public class StreakService : Service
 
         friend.SuccessCount++;
         friend.LastMessageSent = DateTime.Now;
+        // A success ends the failure streak, which is what makes the health colour in the friends
+        // list mean "failing now" rather than "failed at some point".
+        friend.ConsecutiveFailures = 0;
 
         var verification = SendVerification.Classify(scriptReportedSuccess: true, composerCleared: _pendingVerification);
         _pendingVerification = null;
