@@ -693,7 +693,7 @@ public partial class ProfilePage : ContentPage
         try
         {
             _settingsService.ResetAll();
-            PendingSendStore.ForCurrentApp().Clear();
+            PendingSendStoreFactory.ForCurrentApp().Clear();
 #if ANDROID
             // Cancel any alarm already queued for today, otherwise the cleared list would still be
             // woken by the old schedule.
