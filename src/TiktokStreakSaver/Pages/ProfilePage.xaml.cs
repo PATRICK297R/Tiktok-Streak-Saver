@@ -672,6 +672,47 @@ public partial class ProfilePage : ContentPage
         }
     }
 
+    /// <summary>
+    /// Clears the friend list, run history and every setting, but keeps the TikTok session.
+    /// <para>
+    /// Two confirmations, because there is no undo: the first warns that the list goes, the second
+    /// is the actual commit. A single tap that wipes a hand-built friend list would be far too easy
+    /// to trigger by accident.
+    /// </para>
+    /// </summary>
+    private async void OnResetDataClicked(object? sender, EventArgs e)
+    {
+        bool confirm = await DisplayAlert(Localization.T("Prof_ResetDataTitle"),
+            Localization.T("Prof_ResetDataBody"), Localization.T("Prof_ResetDataConfirm"), Localization.T("Common_Cancel"));
+        if (!confirm) return;
+
+        bool reallyConfirm = await DisplayAlert(Localization.T("Prof_ResetDataTitle"),
+            Localization.T("Prof_ResetDataBody2"), Localization.T("Prof_ResetDataConfirm"), Localization.T("Common_Cancel"));
+        if (!reallyConfirm) return;
+
+        try
+        {
+            _settingsService.ResetAll();
+            PendingSendStore.ForCurrentApp().Clear();
+#if ANDROID
+            // Cancel any alarm already queued for today, otherwise the cleared list would still be
+            // woken by the old schedule.
+            TiktokStreakSaver.Platforms.Android.StreakScheduler.CancelSchedule(
+                Platform.CurrentActivity ?? Android.App.Application.Context);
+#endif
+
+            await DisplayAlert(Localization.T("Prof_ResetDataDone"),
+                Localization.T("Prof_ResetDataDoneBody"), Localization.T("Common_OK"));
+
+            // Rebuild the page so every label reflects the cleared state rather than stale values.
+            LoadSettingsFromStorage();
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlert(Localization.T("Prof_ResetData"), ex.Message, Localization.T("Common_OK"));
+        }
+    }
+
     // ─── Backup & Restore ────────────────────────────────────────────────────
 
     private async void OnBackupClicked(object? sender, EventArgs e)

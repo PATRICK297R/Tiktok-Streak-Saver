@@ -428,6 +428,20 @@
                 <Border Style="{StaticResource SectionCard}">
                     <VerticalStackLayout Spacing="12">
                         <Label Text="{svc:Tr Prof_Data}" Style="{StaticResource SectionLabel}"/>
+
+                        <!-- Wipes everything this app stored except the TikTok session, so a run can be
+                             started again from an empty list without having to sign in again. -->
+                        <Button Text="{svc:Tr Prof_ResetData}"
+                                BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray800}}"
+                                TextColor="{AppThemeBinding Light={StaticResource DeleteColor}, Dark={StaticResource DeleteColor}}"
+                                CornerRadius="14"
+                                HeightRequest="44"
+                                Clicked="OnResetDataClicked"/>
+
+                        <Label Text="{svc:Tr Prof_ResetDataNote}"
+                               FontSize="12"
+                               TextColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray400}}"/>
+
                         <Button Text="{svc:Tr Prof_Logout}"
                                 BackgroundColor="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray800}}"
                                 TextColor="{AppThemeBinding Light={StaticResource DeleteColor}, Dark={StaticResource DeleteColor}}"

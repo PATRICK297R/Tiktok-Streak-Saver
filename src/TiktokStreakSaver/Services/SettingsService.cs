@@ -466,6 +466,31 @@ public class SettingsService
     }
 
     /// <summary>
+    /// Wipes every setting this app stores, leaving the TikTok session alone.
+    /// <para>
+    /// The session lives in a separate service (and, on Android, in the WebView cookie jar), so it
+    /// survives untouched - the point of a reset is a clean friend list and a clean history without
+    /// having to sign in again. Only the keys this class owns are removed, not a blanket
+    /// Preferences.Clear(), so unrelated storage such as the login user agent is not collateral.
+    /// </para>
+    /// </summary>
+    public void ResetAll()
+    {
+        foreach (var key in new[]
+        {
+            FriendsListKey, MessageTextKey, LastRunKey, IsScheduledKey, RunHistoryKey,
+            IntervalHoursKey, SkipUnreachableUsersKey, UseFixedTimeKey, FixedTimeHourKey,
+            FixedTimeMinuteKey, FixedTimesKey, RetryCountTodayKey, RetryCountDateKey,
+            LastRunFailedKey, LastRunFailureReasonKey, BatteryAnticipationDateKey,
+            SendOnBatteryLowKey, StreakRiskAlertsKey, StreakRiskWarningHourKey,
+            StreakRiskNotifiedDateKey, DryRunKey, RandomizeNormalMessagesKey
+        })
+        {
+            _storage.Remove(key);
+        }
+    }
+
+    /// <summary>
     /// Default off (matches fork). Users opt in via the Profile toggle.
     /// </summary>
     public bool IsScheduled()

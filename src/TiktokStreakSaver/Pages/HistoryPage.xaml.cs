@@ -191,13 +191,16 @@ public partial class HistoryPage : ContentPage
         var totalCount = run.FriendResults.Count;
         if (totalCount > 0)
         {
-            var skippedCount = totalCount - successCount;
-            if (skippedCount > 0)
+            // Every entry that is not a success is a failure. This used to be labelled "skipped",
+            // which read as "the run chose not to message them" and hid real failures behind a word
+            // that sounds intentional.
+            var failedCount = totalCount - successCount;
+            if (failedCount > 0)
             {
                 var hStack = new HorizontalStackLayout { Spacing = 16 };
                 var l1 = new Label { Text = string.Format(Localization.T("Hist_SentCount"), successCount, totalCount), FontSize = 13 };
                 l1.SetAppThemeColor(Label.TextColorProperty, GetThemeColor("Gray400"), GetThemeColor("Gray400"));
-                var l2 = new Label { Text = string.Format(Localization.T("Hist_SkippedCount"), skippedCount), FontSize = 13 };
+                var l2 = new Label { Text = string.Format(Localization.T("Hist_FailedCount"), failedCount), FontSize = 13 };
                 l2.SetAppThemeColor(Label.TextColorProperty, GetThemeColor("Gray400"), GetThemeColor("Gray400"));
                 hStack.Children.Add(l1);
                 hStack.Children.Add(l2);

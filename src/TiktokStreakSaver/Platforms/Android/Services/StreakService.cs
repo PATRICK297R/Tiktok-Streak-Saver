@@ -1004,6 +1004,41 @@ public class StreakService : Service
                 _runResult.Success = success;
                 _runResult.ErrorMessage = success ? null : message;
                 _runResult.Duration = TakeRunDuration();
+
+                // Close out every chat this run selected but never resolved.
+                //
+                // A send writes an "attempted" record before it starts. If the run ends before that
+                // chat reports back - the user stopped it, the watchdog fired, the service was torn
+                // down - the record stays "attempted", and the next run reads that as "may already
+                // have been messaged" and skips the chat for the rest of the day. It also never
+                // appears in FriendResults, so Retry failed cannot see it either: the chat is simply
+                // lost for the day. That is how a run stopped halfway cost the user four friends.
+                //
+                // The run ended while this code was still in control, so nothing was confirmed sent
+                // to them. Recording a failure is the honest state, and it is what makes the chat
+                // retryable. The asymmetry is deliberate: a duplicate streak emoji is harmless,
+                // whereas a streak silently broken by a skipped chat is the one thing this app exists
+                // to prevent. A rehearsal sends nothing, so it records nothing.
+                if (!_dryRun && _friendsToProcess != null)
+                {
+                    foreach (var pending in _friendsToProcess)
+                    {
+                        if (_runResult.FriendResults.Any(r => r.FriendId == pending.Id))
+                            continue;
+
+                        PendingSends.MarkFailed(pending.Id, DateTime.Now);
+                        _runResult.FriendResults.Add(new FriendMessageResult
+                        {
+                            FriendId = pending.Id,
+                            Username = pending.Username,
+                            Success = false,
+                            ErrorMessage = Localization.T("Android_NotReached"),
+                        });
+
+                        AppLog("FAIL", $"@{pending.Username}", "Run ended before this chat was reached");
+                    }
+                }
+
                 _settingsService.AddRunResult(_runResult);
                 _settingsService.SetLastRunTime(DateTime.Now);
             }

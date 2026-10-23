@@ -61,6 +61,16 @@ public sealed class PendingSendStore
 
     private readonly object _writeLock = new();
 
+    /// <summary>
+    /// The store backed by the app's own data directory, which is the file StreakService writes.
+    /// <para>
+    /// Exposed so a deliberate reset can clear the same file the service reads. Kept free of MAUI
+    /// types so the class stays unit testable; the caller supplies FileSystem.AppDataDirectory.
+    /// </para>
+    /// </summary>
+    public static PendingSendStore ForCurrentApp() =>
+        new(Path.Combine(FileSystem.AppDataDirectory, AppConstants.PendingSendsFileName));
+
     public PendingSendStore(string filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath))
