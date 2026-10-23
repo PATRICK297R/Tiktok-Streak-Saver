@@ -41,6 +41,12 @@ jobs:
         run: npm ci
 
       - name: Build
+        # GITHUB_REPOSITORY is read by vite.config.ts to derive the Pages base path
+        # (/<repo>/). It is present by default, but passing it explicitly documents that
+        # the build depends on it - without it the site is served from '/' and every
+        # asset 404s on a project page.
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: npm run build
 
       - name: Setup Pages
