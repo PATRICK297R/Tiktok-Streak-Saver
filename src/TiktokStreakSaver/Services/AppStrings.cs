@@ -3,10 +3,33 @@ namespace TiktokStreakSaver.Services;
 /// <summary>Which language the interface is drawn in.</summary>
 public enum AppLanguage
 {
-    /// <summary>The original language of the app, and the default for everyone.</summary>
+    /// <summary>The original language of the app, and the fallback for every unrecognised setting.</summary>
     English,
 
     /// <summary>Bahasa Indonesia.</summary>
+    Indonesian
+}
+
+/// <summary>
+/// What the user picked in Profile, which is one step removed from <see cref="AppLanguage"/>: "follow the
+/// phone" is a choice about how to decide, not a language in its own right.
+/// <para>
+/// Kept separate so the rest of the app never has to ask whether the system was consulted. By the time a
+/// string is looked up the answer is already one of the two languages in <see cref="AppLanguage"/>.
+/// </para>
+/// </summary>
+public enum AppLanguageChoice
+{
+    /// <summary>
+    /// Use whatever the phone is set to, and follow it if it changes. This is what a fresh install gets, so
+    /// an Indonesian phone opens in Indonesian without anyone having to find the setting.
+    /// </summary>
+    System,
+
+    /// <summary>English regardless of the phone.</summary>
+    English,
+
+    /// <summary>Bahasa Indonesia regardless of the phone.</summary>
     Indonesian
 }
 
@@ -196,10 +219,11 @@ public static class AppStrings
             "Mengunjungi setiap teman untuk memastikan chatnya bisa dibuka, tanpa mengirim. Uji coba tidak pernah dihitung sebagai terkirim."),
         ["Prof_Language"] = ("LANGUAGE", "BAHASA"),
         ["Prof_LanguageRow"] = ("Language", "Bahasa"),
-        ["Prof_LanguageBody"] = ("Switch the whole interface between English and Indonesian.",
-            "Ganti seluruh tampilan antara bahasa Inggris dan Indonesia."),
+        ["Prof_LanguageBody"] = ("Follows your phone unless you pick a language. Changing it applies straight away.",
+            "Mengikuti bahasa HP Anda, kecuali Anda memilih sendiri. Perubahan langsung berlaku."),
         ["Prof_LanguageEnglish"] = ("English", "English"),
         ["Prof_LanguageIndonesian"] = ("Indonesian", "Bahasa Indonesia"),
+        ["Prof_LanguageSystem"] = ("Follow phone ({0})", "Ikuti HP ({0})"),
         ["Prof_About"] = ("About", "Tentang"),
         ["Prof_ViewDetails"] = ("View Details", "Lihat Detail"),
         ["Prof_AltStoreUpdates"] = ("Updates are installed through AltStore.", "Pembaruan dipasang lewat AltStore."),
@@ -439,6 +463,14 @@ public static class AppStrings
         ["Hist_ErrorNoNetwork"] = ("No network", "Tanpa jaringan"),
         ["Hist_ErrorStopped"] = ("Stopped by user", "Dihentikan oleh Anda"),
         ["Hist_ErrorWebView"] = ("WebView error", "Kesalahan WebView"),
+        // The automation reports its failures as English sentences, and those were shown verbatim in the
+        // history list. These are the same failures said in the interface language.
+        ["Hist_ErrorTimeout"] = ("Timed out", "Waktu habis"),
+        ["Hist_ErrorUserNotFound"] = ("Not found in chat list", "Tidak ada di daftar chat"),
+        ["Hist_ErrorComposer"] = ("Could not type the message", "Tidak bisa mengetik pesan"),
+        ["Hist_ErrorChatPanel"] = ("Chat panel did not open", "Panel chat tidak terbuka"),
+        ["Hist_ErrorNoChats"] = ("No chats found", "Tidak ada chat ditemukan"),
+        ["Hist_ErrorScript"] = ("Automation error", "Kesalahan otomasi"),
         ["Hist_ConfirmedUnverified"] = ("{0}/{1} confirmed, {2} unverified", "{0}/{1} terkonfirmasi, {2} belum terverifikasi"),
         ["Hist_SentCount"] = ("{0}/{1} sent", "{0}/{1} terkirim"),
         ["Hist_SkippedCount"] = ("{0} skipped", "{0} dilewati"),
@@ -866,6 +898,33 @@ public static class AppStrings
 
     /// <summary>Whether a key is in the table. Used by the tests to prove every key exists.</summary>
     public static bool Has(string? key) => !string.IsNullOrEmpty(key) && Table.ContainsKey(key);
+
+    /// <summary>
+    /// The interface language a phone culture name means. <c>id</c>, <c>id-ID</c> and any other Indonesian
+    /// region read as Indonesian; everything else reads as English.
+    /// <para>
+    /// A name rather than a <see cref="System.Globalization.CultureInfo"/> so this stays free of ambient
+    /// state and the tests can pin it. Only the primary subtag is read: Indonesian has no regional
+    /// variant the interface distinguishes, and the phone's exact region is not something the wording
+    /// depends on.
+    /// </para>
+    /// </summary>
+    public static AppLanguage FromCultureName(string? cultureName)
+    {
+        if (string.IsNullOrWhiteSpace(cultureName))
+            return AppLanguage.English;
+
+        var name = cultureName.Trim();
+
+        // "id" or "id-ID"; the underscore spelling is the POSIX form some platforms still report.
+        var separator = name.IndexOfAny(new[] { '-', '_' });
+        var primary = separator > 0 ? name[..separator] : name;
+
+        return string.Equals(primary, "id", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(primary, "in", StringComparison.OrdinalIgnoreCase)
+                ? AppLanguage.Indonesian
+                : AppLanguage.English;
+    }
 
     /// <summary>Every key, for the tests that check the table is complete in both languages.</summary>
     public static IReadOnlyCollection<string> Keys => Table.Keys;

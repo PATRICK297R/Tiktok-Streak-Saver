@@ -33,12 +33,13 @@ public partial class ProfilePage : ContentPage
     }
 
     /// <summary>
-    /// Fills the language picker and selects the language in use.
+    /// Fills the language picker and selects the choice in use.
     /// </summary>
     /// <remarks>
-    /// Built from <see cref="AppLanguage"/> rather than written into the XAML, so the two options and the
-    /// code that reads the selection cannot drift apart. The guard is needed because setting
-    /// <c>SelectedIndex</c> raises the change handler, and that would write the same language back.
+    /// Built from <see cref="AppLanguageChoice"/> rather than written into the XAML, so the options and the
+    /// code that reads the selection cannot drift apart. The order here is the order of the enum. The guard
+    /// is needed because setting <c>SelectedIndex</c> raises the change handler, and that would write the
+    /// same choice back.
     /// </remarks>
     private void BuildLanguagePicker()
     {
@@ -46,13 +47,31 @@ public partial class ProfilePage : ContentPage
 
         LanguagePicker.ItemsSource = new List<string>
         {
+            SystemLanguageLabel(),
             Localization.T("Prof_LanguageEnglish"),
             Localization.T("Prof_LanguageIndonesian")
         };
 
-        LanguagePicker.SelectedIndex = Localization.Current.Language == AppLanguage.Indonesian ? 1 : 0;
+        LanguagePicker.SelectedIndex = (int)Localization.Current.Choice;
 
         _suppressLanguageChanged = false;
+    }
+
+    /// <summary>
+    /// The "follow the phone" option, with the language the phone is currently set to spelled out.
+    /// <para>
+    /// A bare "System" would leave the user guessing what it resolves to, and this is the option a fresh
+    /// install starts on - so it is the one that most needs to say what it will do.
+    /// </para>
+    /// </summary>
+    private static string SystemLanguageLabel()
+    {
+        var phoneLanguage = LanguageChoice.Resolve(AppLanguageChoice.System, AppStrings.FromCultureName(
+            System.Globalization.CultureInfo.CurrentUICulture?.Name)) == AppLanguage.Indonesian
+                ? Localization.T("Prof_LanguageIndonesian")
+                : Localization.T("Prof_LanguageEnglish");
+
+        return string.Format(Localization.T("Prof_LanguageSystem"), phoneLanguage);
     }
 
     /// <summary>
@@ -69,13 +88,17 @@ public partial class ProfilePage : ContentPage
         if (_suppressLanguageChanged)
             return;
 
-        var chosen = LanguagePicker.SelectedIndex == 1 ? AppLanguage.Indonesian : AppLanguage.English;
-        if (chosen == Localization.Current.Language)
+        // The picker's order is the enum's order; anything unexpected is treated as follow-the-phone.
+        var chosen = LanguagePicker.SelectedIndex is >= 0 and <= 2
+            ? (AppLanguageChoice)LanguagePicker.SelectedIndex
+            : AppLanguageChoice.System;
+
+        if (chosen == Localization.Current.Choice)
             return;
 
-        Localization.Current.SetLanguage(chosen);
+        Localization.Current.SetChoice(chosen);
 
-        // The picker's own two options are language names, so they are rebuilt in the new language.
+        // The picker's own options are language names, so they are rebuilt in the new language.
         BuildLanguagePicker();
 
         LoadSettingsFromStorage();
@@ -99,6 +122,12 @@ public partial class ProfilePage : ContentPage
         base.OnAppearing();
         SessionState.Changed -= OnSessionStateChanged;
         SessionState.Changed += OnSessionStateChanged;
+
+        // Coming back to this page is when a language changed elsewhere - in the phone's settings, or by
+        // the activity being recreated - shows up. Re-reading it here keeps the picker honest about what
+        // is actually in use.
+        Localization.Current.RefreshFromSystem();
+        BuildLanguagePicker();
 
         this.Opacity = 0;
         this.TranslationY = 12;

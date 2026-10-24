@@ -50,6 +50,8 @@
 		<Compile Include="../../src/TiktokStreakSaver/Services/AppJsonContext.cs" Link="Shared/Services/AppJsonContext.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/AppBackupCodec.cs" Link="Shared/Services/AppBackupCodec.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/AppStrings.cs" Link="Shared/Services/AppStrings.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/LanguageChoice.cs" Link="Shared/Services/LanguageChoice.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/RunFailureReason.cs" Link="Shared/Services/RunFailureReason.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/BackupMergePolicy.cs" Link="Shared/Services/BackupMergePolicy.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/BackupTimes.cs" Link="Shared/Services/BackupTimes.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/ContactScanReader.cs" Link="Shared/Services/ContactScanReader.cs" />

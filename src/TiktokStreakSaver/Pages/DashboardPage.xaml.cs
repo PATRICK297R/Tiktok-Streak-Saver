@@ -69,6 +69,12 @@ public partial class DashboardPage : ContentPage
     {
         base.OnAppearing();
         _isAppInForeground = true;
+
+        // The phone's language can change while the app is in the background, and Android keeps this
+        // process alive rather than restarting it. Re-reading it here is what makes "follow the phone"
+        // mean the phone as it is now, rather than the phone as it was at launch.
+        Localization.Current.RefreshFromSystem();
+
         SessionState.Changed -= OnSessionStateChanged;
         SessionState.Changed += OnSessionStateChanged;
 

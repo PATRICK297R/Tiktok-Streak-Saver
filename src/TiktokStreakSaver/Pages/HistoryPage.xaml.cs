@@ -165,17 +165,21 @@ public partial class HistoryPage : ContentPage
 #endif
     }
 
-    private string ShortenErrorMessage(string? originalMsg)
+    private static string ShortenErrorMessage(string? originalMsg)
     {
         if (string.IsNullOrEmpty(originalMsg)) return "";
-        // A stored error may have been written in either language, so the English wording and the translated
-        // short form are both matched before the message is replaced with the short form.
+
+        // The run-level reasons the app itself writes (login wall, navigation, network, stop, WebView) are
+        // already stored in the interface language, so the translated form matches and comes back as-is.
+        // What RunFailureReason adds is the per-chat reasons the automation script reports in English, which
+        // used to reach this list untranslated.
         if (Matches(originalMsg, "login required", "Hist_ErrorLoginRequired")) return Localization.T("Hist_ErrorLoginRequired");
         if (Matches(originalMsg, "navigate to", "Hist_ErrorNavigation")) return Localization.T("Hist_ErrorNavigation");
         if (Matches(originalMsg, "No network", "Hist_ErrorNoNetwork")) return Localization.T("Hist_ErrorNoNetwork");
         if (Matches(originalMsg, "stopped by user", "Hist_ErrorStopped")) return Localization.T("Hist_ErrorStopped");
         if (Matches(originalMsg, "WebView", "Hist_ErrorWebView")) return Localization.T("Hist_ErrorWebView");
-        return originalMsg;
+
+        return RunFailureReason.Describe(originalMsg);
     }
 
     private static bool Matches(string message, string englishFragment, string key)
