@@ -548,7 +548,7 @@ blockquote{{
     private static async Task<bool> EnsureCanInstallPackagesAsync()
     {
 #if ANDROID
-        if (!Android.OS.Build.VERSION.SdkInt.AtLeast(Android.OS.BuildVersionCodes.O))
+        if ((int)Android.OS.Build.VERSION.SdkInt < (int)Android.OS.BuildVersionCodes.O)
             return true;
 
         var context = Android.App.Application.Context;
