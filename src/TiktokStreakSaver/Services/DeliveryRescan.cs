@@ -71,8 +71,8 @@ public static class DeliveryRescan
         existing.Success = resend.Success;
         existing.ErrorMessage = resend.ErrorMessage;
         existing.Verified = resend.Verified;
-        existing.BubbleBaseline = resend.BubbleBaseline;
         existing.MessageText = resend.MessageText;
+        existing.SentAt = resend.SentAt;
         existing.Timestamp = resend.Timestamp;
     }
 
