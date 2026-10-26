@@ -218,8 +218,11 @@ public class ScriptPreparationTests
         // The selectors are the ones checked against a live inbox, in both the classic inbox and Business
         // Suite. Pinning them is the point: if they are ever changed back to guesses, every chat comes back
         // unverified and the app starts resending to people who already got the message.
+        //
+        // The message row is matched as a data-e2e value during the walk; the text node is looked up as a
+        // selector inside the row.
+        Assert.Contains("e2e !== 'dm-new-chat-item'", script);
         Assert.Contains("[data-e2e=\"dm-new-message-text\"]", script);
-        Assert.Contains("[data-e2e=\"dm-new-chat-item\"]", script);
 
         // Both branches consult the verdict rather than the composer alone.
         var verdicts = System.Text.RegularExpressions.Regex.Matches(script, "var delivery = verifyDelivery\\(\\);");
