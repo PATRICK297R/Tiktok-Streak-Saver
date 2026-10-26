@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg width="456" height="456" viewBox="0 0 456 456" version="1.1" xmlns="http://www.w3.org/2000/svg">
-    <!-- Flame/Fire icon for splash screen -->
-    <g transform="translate(128, 78) scale(8.33)">
-        <path 
+    <!--
+        Flame for the splash screen, drawn white on the brand red background (maui_splash_color).
+
+        The transform is computed, not eyeballed. The flame's own bounding box runs x 4..20, y 0.67..22,
+        so its centre sits at (12, 11.335) in path units. Placing that centre on the canvas centre (228,
+        228) at scale 10.5 needs translate(102, 109): 102 + 12 * 10.5 = 228, and 109 + 11.335 * 10.5 =
+        228. The previous translate(128, 78) left the flame about 56 units above centre and only 39% of
+        the canvas tall, which is what made the splash look tilted and undersized.
+    -->
+    <g transform="translate(102, 109) scale(10.5)">
+        <path
             d="M13.5,0.67s0.74,2.65 0.74,4.8c0,2.06 -1.35,3.73 -3.41,3.73 -2.07,0 -3.63,-1.67 -3.63,-3.73l0.03,-0.36C5.21,7.51 4,10.62 4,14c0,4.42 3.58,8 8,8s8,-3.58 8,-8C20,8.61 17.41,3.8 13.5,0.67zM11.71,19c-1.78,0 -3.22,-1.4 -3.22,-3.14 0,-1.62 1.05,-2.76 2.81,-3.12 1.77,-0.36 3.6,-1.21 4.62,-2.58 0.39,1.29 0.59,2.65 0.59,4.04 0,2.65 -2.15,4.8 -4.8,4.8z"
             fill="#FFFFFF"
         />

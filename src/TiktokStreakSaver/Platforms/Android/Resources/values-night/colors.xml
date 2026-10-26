@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-  <!-- Theme-aware splash: dark mode (UiMode night) -->
-  <color name="maui_splash_color">#121212</color>
+  <!--
+    Splash background, dark mode. Deliberately the same brand red as the light theme: the splash is a
+    brand moment, not a page, and a black launch screen would mean the app opens differently again
+    depending on the phone's theme. The dark theme still applies to everything after it.
+  -->
+  <color name="maui_splash_color">#FE2C55</color>
+
   <!-- Adaptive launcher icon background in dark mode (pairs with @mipmap-night-anydpi-v26/appicon*.xml) -->
   <color name="appicon_adaptive_background">#121212</color>
-  <!-- Android 12+ themed splash background (dark) -->
-  <color name="splash_bg">#000000</color>
+
+  <!-- Android 12+ themed splash background (dark). Matches above, and the light theme. -->
+  <color name="splash_bg">#FE2C55</color>
 </resources>

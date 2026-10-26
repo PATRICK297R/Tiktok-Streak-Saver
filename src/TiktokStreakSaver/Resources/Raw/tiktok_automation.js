@@ -732,6 +732,87 @@
         return (editor.textContent || '').trim();
     };
 
+    // ── Delivery proof ───────────────────────────────────────────────────────
+    //
+    // An empty composer only proves TikTok accepted the click. It does not prove a message appeared in
+    // the thread: the composer can be cleared by the click handler, by a re-render, or by the panel being
+    // torn down, and every one of those used to be reported as a delivered message. What the user
+    // actually wants to know is whether the bubble is there.
+    //
+    // So after sending, the thread is read back and searched for a bubble carrying this exact message
+    // that was not there before the send. That is the strongest evidence available from inside the page:
+    // it is TikTok's own rendering of the message, not an inference from our own clicks.
+
+    // The thread's message bubbles, oldest first.
+    //
+    // The selectors are broad on purpose and then filtered by the caller, because TikTok renames data-e2e
+    // values without warning. An empty result is treated as "cannot prove it" rather than "not delivered",
+    // which is why a missing selector degrades the verdict instead of failing the send.
+    var findMessageBubbles = function () {
+        var doc = getRootDoc();
+        var selectors = [
+            '[data-e2e="chat-message"]',
+            '[data-e2e*="message-bubble"]',
+            '[data-e2e*="msg-bubble"]',
+            '[class*="MessageBubble"]',
+            '[class*="messageBubble"]',
+            '[class*="DivMessageBubble"]'
+        ];
+
+        for (var i = 0; i < selectors.length; i++) {
+            var found = doc.querySelectorAll(selectors[i]);
+            if (found && found.length > 0) {
+                return found;
+            }
+        }
+
+        return null;
+    };
+
+    // How many bubbles already carry this message. Taken before sending, so a message identical to one
+    // sent earlier today is still counted as new when its count goes up.
+    var countBubblesWithText = function (text) {
+        var bubbles = findMessageBubbles();
+        if (!bubbles) return null;
+
+        var wanted = (text || '').replace(/\s+/g, ' ').trim();
+        if (wanted.length === 0) return null;
+
+        var count = 0;
+        for (var i = 0; i < bubbles.length; i++) {
+            var body = (bubbles[i].textContent || '').replace(/\s+/g, ' ').trim();
+            // Containment rather than equality: the bubble also holds the timestamp and, in a group, the
+            // sender's name, so it is a superset of the message.
+            if (body.indexOf(wanted) !== -1) {
+                count++;
+            }
+        }
+
+        return count;
+    };
+
+    var countBubblesBeforeSend = null;
+
+    // The verdict, from the strongest signal available.
+    //
+    //   'found'     - a new bubble with this message is in the thread
+    //   'absent'    - the thread was readable and the message is not in it
+    //   'unknown'   - the thread could not be read, so nothing can be claimed either way
+    var verifyDelivery = function () {
+        var after = countBubblesWithText(message);
+
+        if (after === null) {
+            return 'unknown';
+        }
+
+        if (countBubblesBeforeSend === null) {
+            // No baseline was taken, so the only honest question is whether the message is there at all.
+            return after > 0 ? 'found' : 'absent';
+        }
+
+        return after > countBubblesBeforeSend ? 'found' : 'absent';
+    };
+
     // ── Chat Processing ──────────────────────────────────────────────────────
 
     var sendMessageViaButton = function () {
@@ -760,6 +841,11 @@
 
             sendMessage(messageInput);
 
+            // Baseline for the delivery check, taken after typing but before the send is dispatched.
+            countBubblesBeforeSend = countBubblesWithText(message);
+            log('[VERIFY] Bubbles carrying this message before send: ' +
+                (countBubblesBeforeSend === null ? 'thread unreadable' : countBubblesBeforeSend));
+
             if (business) {
                 // The composer node captured before typing is usually detached by the time Draft.js
                 // has re-rendered, so the outcome is read from the live composer. A crashed panel
@@ -776,13 +862,17 @@
                     }
 
                     var remaining = readComposerText();
-                    var confirmed = remaining === '';
+                    var composerCleared = remaining === '';
+
+                    // The bubble is the real evidence; the composer is only the fallback.
+                    var delivery = verifyDelivery();
 
                     log('[VERIFY] Composer after send: ' + (remaining === null ? 'gone' : 'len=' + remaining.length) +
-                        ' -> ' + (confirmed ? 'confirmed' : 'unverified'));
+                        ', bubble: ' + delivery + ' -> ' +
+                        (delivery === 'found' || (delivery === 'unknown' && composerCleared) ? 'confirmed' : 'unverified'));
 
                     if (typeof StreakApp !== 'undefined') {
-                        StreakApp.reportVerification(confirmed);
+                        StreakApp.reportVerification(delivery === 'found' || (delivery === 'unknown' && composerCleared));
                     }
 
                     reportSuccess();
@@ -801,14 +891,21 @@
                 }
 
                 setTimeout(function () {
-                    var confirmed = false;
+                    var composerCleared = false;
                     try {
                         var finalRemaining = (messageInput.textContent || '').trim();
-                        confirmed = finalRemaining.length === 0;
-                        log('[VERIFY] Composer final status: len=' + finalRemaining.length + ' -> ' + (confirmed ? 'confirmed' : 'unverified'));
+                        composerCleared = finalRemaining.length === 0;
+                        log('[VERIFY] Composer final status: len=' + finalRemaining.length);
                     } catch (e) {
                         log('[VERIFY] Could not read composer: ' + e.message);
                     }
+
+                    // Same order of evidence as the Business Suite path: the bubble decides, the composer
+                    // only covers the case where the thread could not be read.
+                    var delivery = verifyDelivery();
+                    var confirmed = delivery === 'found' || (delivery === 'unknown' && composerCleared);
+
+                    log('[VERIFY] Bubble: ' + delivery + ' -> ' + (confirmed ? 'confirmed' : 'unverified'));
 
                     if (typeof StreakApp !== 'undefined') {
                         StreakApp.reportVerification(confirmed);

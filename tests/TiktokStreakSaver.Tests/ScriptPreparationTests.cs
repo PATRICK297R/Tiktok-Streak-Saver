@@ -192,9 +192,40 @@ public class ScriptPreparationTests
         }
     }
 
-    private static string? FindRawScript(string fileName)
+    /// <summary>
+    /// The send path must ask for delivery proof, not just an empty composer.
+    /// <para>
+    /// An empty composer only proves TikTok accepted the click - a re-render or a torn-down panel clears
+    /// it too - so a script that stops there can report a delivered message that never appeared in the
+    /// thread. The bubble check is what makes the confirmation mean something, and it has to be wired into
+    /// both send paths, because the classic inbox and Business Suite go through different branches.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void TheSendingScriptVerifiesTheMessageAppearedInTheThread()
     {
-        var relative = System.IO.Path.Combine(
+        var path = FindRawScript("tiktok_automation.js");
+        if (path is null)
+            return;
+
+        var script = System.IO.File.ReadAllText(path);
+
+        // The helpers exist.
+        Assert.Contains("var findMessageBubbles = function", script);
+        Assert.Contains("var countBubblesWithText = function", script);
+        Assert.Contains("var verifyDelivery = function", script);
+
+        // A baseline is taken before the send, so a message identical to an earlier one still counts as new.
+        Assert.Contains("countBubblesBeforeSend = countBubblesWithText(message)", script);
+
+        // Both branches consult the verdict rather than the composer alone.
+        var verdicts = System.Text.RegularExpressions.Regex.Matches(script, "var delivery = verifyDelivery\\(\\);");
+        Assert.True(verdicts.Count >= 2,
+            $"Both send paths have to call verifyDelivery(); found {verdicts.Count}.");
+    }
+
+    private static string? FindRawScript(string fileName)
+    {        var relative = System.IO.Path.Combine(
             "src", "TiktokStreakSaver", "Resources", "Raw", fileName);
 
         var candidates = new[]

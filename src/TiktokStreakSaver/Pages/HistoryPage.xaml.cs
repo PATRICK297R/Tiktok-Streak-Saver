@@ -287,10 +287,81 @@ public partial class HistoryPage : ContentPage
             infoStack.Children.Add(new Label { Text = shortMsg, FontSize = 12, TextColor = statusColor, LineBreakMode = LineBreakMode.TailTruncation });
         }
 
+        // Tapping a run opens the per-chat breakdown. The summary above says how many landed; this is the
+        // only way to find out which ones, and whether "sent" was actually confirmed or merely assumed.
+        if (run.FriendResults.Count > 0)
+        {
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var chevron = new Label
+            {
+                Text = "›",
+                FontSize = 20,
+                VerticalOptions = LayoutOptions.Center,
+                HorizontalOptions = LayoutOptions.End,
+            };
+            chevron.SetAppThemeColor(Label.TextColorProperty, GetThemeColor("Gray400"), GetThemeColor("Gray400"));
+            Grid.SetColumn(chevron, 2);
+            grid.Children.Add(chevron);
+
+            var tap = new TapGestureRecognizer();
+            tap.Tapped += async (_, _) => await ShowRunDetailAsync(run);
+            border.GestureRecognizers.Add(tap);
+        }
+
         Grid.SetColumn(infoStack, 1);
         grid.Children.Add(infoStack);
         border.Content = grid;
         return border;
+    }
+
+    /// <summary>
+    /// The per-chat breakdown of one run: what was sent, to whom, and how sure the app is.
+    /// <para>
+    /// "Sent" in the list above means the script reported success. The distinction this page adds is
+    /// whether that was <em>confirmed</em> - the message found in the thread - or only assumed because the
+    /// composer cleared. Without it the user has no way to tell a real delivery from a hopeful one.
+    /// </para>
+    /// </summary>
+    private async Task ShowRunDetailAsync(StreakRunResult run)
+    {
+        var results = run.FriendResults ?? new List<FriendMessageResult>();
+        var lines = new List<string>();
+
+        foreach (var result in results.OrderBy(r => r.Timestamp))
+        {
+            var name = string.IsNullOrWhiteSpace(result.Username) ? result.FriendId : "@" + result.Username;
+
+            if (result.DryRun)
+            {
+                lines.Add($"· {name} — {Localization.T("Hist_DetailDryRun")}");
+                continue;
+            }
+
+            if (!result.Success)
+            {
+                var reason = ShortenErrorMessage(result.ErrorMessage);
+                lines.Add($"✕ {name} — {(string.IsNullOrEmpty(reason) ? Localization.T("Hist_DetailFailed") : reason)}");
+                continue;
+            }
+
+            lines.Add(result.Verified switch
+            {
+                true => $"✓ {name} — {Localization.T("Hist_DetailConfirmed")}",
+                false => $"! {name} — {Localization.T("Hist_DetailUnverified")}",
+                _ => $"✓ {name} — {Localization.T("Hist_DetailSentUnchecked")}",
+            });
+        }
+
+        if (lines.Count == 0)
+            lines.Add(Localization.T("Hist_DetailNothing"));
+
+        var (attempted, confirmed, unverified, _) = SendConfirmationSummary.Summarize(run.FriendResults);
+        var header = attempted > 0
+            ? string.Format(Localization.T("Hist_DetailHeader"), run.RunTime.ToString("MMM dd, HH:mm"), confirmed, attempted, unverified)
+            : run.RunTime.ToString("MMM dd, HH:mm");
+
+        await DisplayAlert(header, string.Join(Environment.NewLine, lines), Localization.T("Common_Close"));
     }
 
     private async void OnClearHistoryClicked(object? sender, EventArgs e)

@@ -1,11 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 12+ splash icon: the same white flame on the brand red background.
+
+    Two things differ from a naive copy of the flame path.
+
+    First, the fill is white. The background is the brand red (#FE2C55) set by splash_bg, and a red flame
+    on a red background is invisible - which is what the old file produced, because it kept the red fill
+    while values-v31 painted the background white. The two halves of the splash had drifted apart.
+
+    Second, the flame is scaled down inside the 24x24 viewport. Android 12 masks this icon with a circle
+    roughly two thirds of its box, and the flame path spans y 0.67..22 - almost the full height - so the
+    top of the flame and the flat base were being clipped off. Scaling to 0.58 about the flame's own
+    centre (12, 11.335) keeps every edge inside the mask.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- Streak Saver flame icon (matches Resources/Splash/splash.svg) -->
-    <path
-        android:fillColor="#FE2C55"
-        android:pathData="M13.5,0.67s0.74,2.65 0.74,4.8c0,2.06 -1.35,3.73 -3.41,3.73 -2.07,0 -3.63,-1.67 -3.63,-3.73l0.03,-0.36C5.21,7.51 4,10.62 4,14c0,4.42 3.58,8 8,8s8,-3.58 8,-8C20,8.61 17.41,3.8 13.5,0.67zM11.71,19c-1.78,0 -3.22,-1.4 -3.22,-3.14 0,-1.62 1.05,-2.76 2.81,-3.12 1.77,-0.36 3.6,-1.21 4.62,-2.58 0.39,1.29 0.59,2.65 0.59,4.04 0,2.65 -2.15,4.8 -4.8,4.8z"/>
+    <group
+        android:pivotX="12"
+        android:pivotY="11.335"
+        android:scaleX="0.58"
+        android:scaleY="0.58">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M13.5,0.67s0.74,2.65 0.74,4.8c0,2.06 -1.35,3.73 -3.41,3.73 -2.07,0 -3.63,-1.67 -3.63,-3.73l0.03,-0.36C5.21,7.51 4,10.62 4,14c0,4.42 3.58,8 8,8s8,-3.58 8,-8C20,8.61 17.41,3.8 13.5,0.67zM11.71,19c-1.78,0 -3.22,-1.4 -3.22,-3.14 0,-1.62 1.05,-2.76 2.81,-3.12 1.77,-0.36 3.6,-1.21 4.62,-2.58 0.39,1.29 0.59,2.65 0.59,4.04 0,2.65 -2.15,4.8 -4.8,4.8z"/>
+    </group>
 </vector>
