@@ -211,19 +211,15 @@ public class ScriptPreparationTests
         var script = System.IO.File.ReadAllText(path);
 
         // The helpers exist.
-        Assert.Contains("var findMessageTextNodes = function", script);
-        Assert.Contains("var findMessageRows = function", script);
-        Assert.Contains("var countBubblesWithText = function", script);
+        Assert.Contains("var collectMessagesWithTimes = function", script);
+        Assert.Contains("var judgeAgainstWindow = function", script);
         Assert.Contains("var verifyDelivery = function", script);
 
-        // The selectors are the ones checked against a live Business Suite inbox. Pinning them is the point:
-        // if they are ever changed back to guesses, every chat comes back unverified and the app starts
-        // resending to people who already got the message.
+        // The selectors are the ones checked against a live inbox, in both the classic inbox and Business
+        // Suite. Pinning them is the point: if they are ever changed back to guesses, every chat comes back
+        // unverified and the app starts resending to people who already got the message.
         Assert.Contains("[data-e2e=\"dm-new-message-text\"]", script);
         Assert.Contains("[data-e2e=\"dm-new-chat-item\"]", script);
-
-        // A baseline is taken before the send, so a message identical to an earlier one still counts as new.
-        Assert.Contains("countBubblesBeforeSend = countBubblesWithText(message)", script);
 
         // Both branches consult the verdict rather than the composer alone.
         var verdicts = System.Text.RegularExpressions.Regex.Matches(script, "var delivery = verifyDelivery\\(\\);");
@@ -276,11 +272,14 @@ public class ScriptPreparationTests
 
         var script = System.IO.File.ReadAllText(path);
 
-        Assert.Contains("[data-e2e=\"dm-new-time-separator\"]", script);
         Assert.Contains("[data-e2e=\"dm-new-message-list\"]", script);
         Assert.Contains("var parseSeparator = function", script);
         Assert.Contains("var collectMessagesWithTimes = function", script);
         Assert.Contains("var judgeAgainstWindow = function", script);
+
+        // The separator is matched as a value, not as a selector: the walk reads every element's data-e2e
+        // and compares it, which is what lets one pass map each message to the separator above it.
+        Assert.Contains("e2e === 'dm-new-time-separator'", script);
 
         // The window is passed in by the app, and an unreplaced placeholder must not be read as a date.
         Assert.Contains("[WindowStart]", script);

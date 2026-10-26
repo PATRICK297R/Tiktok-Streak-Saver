@@ -419,3 +419,6 @@ TestResults/
 
 # Exported run logs, dropped here by hand when reporting a problem. Not source.
 log.txt
+
+# Playwright MCP scratch output from inspecting TikTok's DOM. Not source.
+.playwright-mcp/
