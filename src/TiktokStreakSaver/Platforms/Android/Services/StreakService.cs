@@ -49,7 +49,7 @@ public class StreakService : Service
     /// <summary>
     /// Intent extra marking a run the user started by tapping Run Now.
     /// <para>
-    /// A scheduled run honours the "already messaged today" cooldown; a manual run does not, because
+    /// A scheduled run honours the "already messaged in this slot" cooldown; a manual run does not, because
     /// the user is pressing the button precisely to send again. Carried per-intent so a later
     /// scheduled run cannot inherit the exemption.
     /// </para>
@@ -62,10 +62,10 @@ public class StreakService : Service
     private bool _isManualRun;
 
     /// <summary>
-    /// When set, this run processes only these friend ids and ignores the "already sent today" skip.
+    /// When set, this run processes only these friend ids and ignores the "already messaged in this slot" skip.
     /// <para>
-    /// A normal run skips anyone messaged today, which is what stops a double send. A retry exists
-    /// precisely because those chats failed, so the skip has to be bypassed for them - and only them,
+    /// A normal run skips anyone already messaged in the slot, which is what stops a double send. A retry
+    /// exists precisely because those chats failed, so the skip has to be bypassed for them - and only them,
     /// which is why the ids are carried rather than a simple "ignore cooldown" flag.
     /// </para>
     /// </summary>
@@ -547,10 +547,21 @@ public class StreakService : Service
             var allEnabled = _settingsService?.GetEnabledFriends() ?? new List<FriendConfig>();
             var today = DateTime.Now.Date;
 
-            // What the durable record says about today. Read before anything is sent, because a run that
-            // the system killed mid-send leaves an entry here with no result - and that entry is the only
-            // evidence that a message may already have gone out.
-            var durableStates = PendingSends.ReadToday(today);
+            // Which schedule slot is running now. Everything below is judged against it rather than
+            // against the calendar day: with a multi-time schedule the first run of the day used to claim
+            // every friend, and the later runs then skipped all of them and reported success.
+            var slotStart = SendCooldown.SlotStart(
+                _settingsService?.GetUseFixedTime() ?? false,
+                _settingsService?.GetFixedDailyTimes(),
+                _settingsService?.GetLastRunTime(),
+                DateTime.Now);
+
+            AppLog("SYSTEM", "-", $"Schedule slot opened at {slotStart:HH:mm}");
+
+            // What the durable record says about this slot. Read before anything is sent, because a run
+            // that the system killed mid-send leaves an entry here with no result - and that entry is the
+            // only evidence that a message may already have gone out.
+            var durableStates = PendingSends.ReadSince(slotStart);
 
             foreach (var friend in allEnabled)
             {
@@ -561,39 +572,39 @@ public class StreakService : Service
                     continue;
 
                 // A manual Run Now ignores both cooldowns below. The user pressed the button to send
-                // again, so "already messaged today" is the expected state, not a reason to skip -
-                // honouring it turned the tap into a no-op that only reported "already sent". The
-                // scheduled path keeps both checks untouched, which is what prevents the 23-hour
-                // schedule from double-sending.
+                // again, so "already messaged" is the expected state, not a reason to skip - honouring it
+                // turned the tap into a no-op that only reported "already sent". The scheduled path keeps
+                // both checks untouched, which is what prevents a double-send.
                 if (_isManualRun)
                 {
                     _friendsToProcess.Add(friend);
                     continue;
                 }
 
-                if (!isTargeted && friend.LastMessageSent.HasValue && friend.LastMessageSent.Value.Date == today)
+                if (!isTargeted && SendCooldown.AlreadySentForSlot(friend.LastMessageSent, slotStart, DateTime.Now))
                 {
                     _cooldownSkippedCount++;
                     AppLog("SKIP", $"@{friend.Username}",
-                        $"Already messaged today at {friend.LastMessageSent.Value:HH:mm}");
+                        friend.LastMessageSent is { } sentAt
+                            ? $"Already messaged in this slot at {sentAt:HH:mm}"
+                            : "Already messaged in this slot");
                     continue;
                 }
 
                 // Sent: the message is known to have gone out. Unknown: the send was in flight when the
                 // process was killed, so it may have gone out. Either way, sending again would put a second
                 // message on the same friend - the pile-up this record exists to prevent - so the entry is
-                // left alone for the rest of the day. A definite failure is not skipped: nothing was sent,
+                // left alone for the rest of the slot. A definite failure is not skipped: nothing was sent,
                 // so a retry is safe.
                 //
                 // A targeted retry is the exception: the user explicitly asked for these chats, so the
-                // durable "sent" entry is cleared and the send is allowed. The cooldown above still
-                // protects everything the user did not name.
+                // check is bypassed and the send is allowed.
                 if (!isTargeted && durableStates.TryGetValue(friend.Id, out var outcome) && outcome != PendingSendState.Failed)
                 {
                     _cooldownSkippedCount++;
                     AppLog("SKIP", $"@{friend.Username}", outcome == PendingSendState.Sent
-                        ? "Already messaged today (durable record)"
-                        : "May already have been messaged — the previous run was interrupted");
+                        ? "Already messaged in this slot (durable record)"
+                        : "May already have been messaged in this slot - the previous run was interrupted");
                     continue;
                 }
 
@@ -623,14 +634,20 @@ public class StreakService : Service
             }
 
             AppLog("SYSTEM", "-",
-                $"Starting automation: {_friendsToProcess.Count} to process, {_cooldownSkippedCount} skipped (already sent today)");
+                $"Starting automation: {_friendsToProcess.Count} to process, {_cooldownSkippedCount} skipped (already messaged in this slot)");
 
             if (_friendsToProcess.Count == 0)
             {
+                // Nothing was sent, so this is not a delivered run. Reporting it as one is how a schedule
+                // that never actually fires looked fine: every later slot skipped every friend and the
+                // notification still said all messages were sent.
                 var msg = _cooldownSkippedCount > 0
                     ? string.Format(Localization.T("Android_AllFriendsMessaged"), _cooldownSkippedCount)
                     : Localization.T("Android_NoFriendsConfigured");
-                CompleteService(_cooldownSkippedCount > 0, msg);
+
+                // Success is left false on purpose: no message went out. The run is still recorded so the
+                // day's activity is visible, but it must not read as a delivery.
+                CompleteService(false, msg);
                 return;
             }
 
@@ -1309,11 +1326,19 @@ public class StreakService : Service
         var verification = SendVerification.Classify(scriptReportedSuccess: true, composerCleared: _pendingVerification);
         _pendingVerification = null;
 
+        // The durable "sent" record is written here, after the script reported a result, and not at the
+        // moment the send was attempted. It used to be written before any confirmation existed, so a send
+        // that turned out to have left nothing in the chat still blocked the friend for the rest of the
+        // slot - and the next run then reported "already messaged" for a message that never arrived.
+        //
+        // MarkAttempted already recorded that the send started, so a process killed in between still
+        // leaves the "unknown" entry that keeps a duplicate from being sent.
+        PendingSends.MarkSent(friend.Id, DateTime.Now);
+
         AppLog(_isResending ? "RESEND" : "SUCCESS", label,
             $"Message sent ({SendVerification.Describe(verification)})");
 
         _settingsService.UpdateFriend(friend);
-        PendingSends.MarkSent(friend.Id, DateTime.Now);
 
         RecordFriendResult(new FriendMessageResult
         {
@@ -1548,15 +1573,28 @@ public class StreakService : Service
             var totalSent = _runResult?.FriendResults.Count ?? 0;
             var skippedCount = totalSent - successCount;
 
+            // How many of those sends the app could actually stand behind. A send counts as confirmed only
+            // when the message was found in the chat; "the script said it worked" is a different claim, and
+            // the notification used to make the stronger one on the weaker evidence.
+            var confirmedCount = _runResult?.FriendResults.Count(r => r.Success && r.Verified == true) ?? 0;
+            var unconfirmedCount = successCount - confirmedCount;
+
             // Build human-readable summary including cooldown-skipped friends
             var cooldownNote = _cooldownSkippedCount > 0
                 ? string.Format(Localization.T("Android_CooldownNote"), _cooldownSkippedCount)
                 : string.Empty;
 
             string finalText;
-            if (success)
+            if (success && unconfirmedCount == 0)
             {
                 finalText = string.Format(Localization.T("Android_DoneAllSent"), successCount, totalSent, cooldownNote);
+            }
+            else if (success)
+            {
+                // Every send reported success, but not all of them could be confirmed. Saying "all sent"
+                // here is what made an unverified run look identical to a delivered one.
+                finalText = string.Format(Localization.T("Android_DoneAllUnconfirmed"),
+                    successCount, totalSent, unconfirmedCount, cooldownNote);
             }
             else if (totalSent > 0 && successCount > 0)
             {

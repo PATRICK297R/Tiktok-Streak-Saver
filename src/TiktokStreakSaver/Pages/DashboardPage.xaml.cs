@@ -419,7 +419,13 @@ public partial class DashboardPage : ContentPage
     }
 
     /// <summary>
-    /// Ids of chats that failed today and have not succeeded since.
+    /// Ids of chats that failed today, or that were sent to but could not be confirmed, and have not
+    /// succeeded since.
+    /// <para>
+    /// An unconfirmed send belongs here. It is not a failure the user can see - the row says success - but
+    /// it is exactly the case where the message may never have arrived, which is the whole reason this
+    /// button exists. Leaving it out meant a chat whose message was never found had no way back.
+    /// </para>
     /// </summary>
     internal static List<string> GetRetryableFailedFriendIds(
         List<StreakRunResult> history, List<FriendConfig> enabledFriends)
@@ -448,13 +454,20 @@ public partial class DashboardPage : ContentPage
                 if (result.DryRun)
                     continue;
 
-                if (result.Success)
+                if (result.Success && result.Verified == true)
                 {
                     succeeded.Add(result.FriendId);
                     failed.Remove(result.FriendId);
                 }
                 else if (!string.IsNullOrEmpty(result.ErrorMessage))
                 {
+                    if (!succeeded.Contains(result.FriendId))
+                        failed.Add(result.FriendId);
+                }
+                else if (result.Success && result.Verified == false)
+                {
+                    // Sent, but the message was looked for and not found. Not a success to clear an
+                    // earlier failure, and worth offering a retry for.
                     if (!succeeded.Contains(result.FriendId))
                         failed.Add(result.FriendId);
                 }

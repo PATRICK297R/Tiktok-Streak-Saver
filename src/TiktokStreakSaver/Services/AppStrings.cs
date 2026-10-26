@@ -800,6 +800,8 @@ public static class AppStrings
         ["Android_RescanStarting"] = ("Checking {0} chats really received the message...", "Memeriksa {0} chat benar-benar menerima pesan..."),
         ["Android_RescanProgress"] = ("Checking {0}/{1}: {2}", "Memeriksa {0}/{1}: {2}"),
         ["Android_RescanResending"] = ("Resending to {0} chats that were not found", "Mengirim ulang ke {0} chat yang tidak ditemukan"),
+        // Sent, but the app could not find the message in the chat to confirm it.
+        ["Android_DoneAllUnconfirmed"] = ("{0} of {1} sent, {2} could not be confirmed{3}", "{0} dari {1} terkirim, {2} belum bisa dikonfirmasi{3}"),
         ["Android_SkippedNoNetwork"] = ("Skipped: no Wi‑Fi or mobile data", "Dilewati: tidak ada Wi‑Fi atau data seluler"),
         ["Android_OfflineTitle"] = ("TikTok Streak Saver — offline", "TikTok Streak Saver — tanpa jaringan"),
         ["Android_OfflineRetryBody"] = ("No Wi‑Fi or mobile data. Streak run skipped; retrying in 1 hour (attempt {0}/{1}).", "Tidak ada Wi‑Fi atau data seluler. Pengiriman streak dilewati; mencoba lagi dalam 1 jam (percobaan {0}/{1})."),

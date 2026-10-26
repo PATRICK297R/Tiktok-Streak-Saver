@@ -90,16 +90,22 @@ public sealed class PendingSendStore
         $"{FailedKind}{Separator}{at.Ticks}{Separator}{friendId}";
 
     /// <summary>
-    /// Folds the records into one outcome per entry, counting only the given day.
+    /// Folds the records into one outcome per entry, counting only those at or after
+    /// <paramref name="since"/>.
+    /// <para>
+    /// The cutoff is a moment rather than a day, because a schedule can run several times in one day. A
+    /// "sent" record from the 08:00 run must not stop the 15:00 run from messaging the same friend, and a
+    /// per-day fold made it do exactly that.
+    /// </para>
     /// <para>
     /// The last record for an entry wins, so an attempt followed by a result reports the result, and a
     /// retry that finally succeeded reports success rather than the earlier attempt.
     /// </para>
     /// </summary>
-    public static IReadOnlyDictionary<string, PendingSendState> FoldToday(IEnumerable<string?>? lines, DateTime day)
+    public static IReadOnlyDictionary<string, PendingSendState> FoldSince(
+        IEnumerable<string?>? lines, DateTime since)
     {
         var states = new Dictionary<string, PendingSendState>(StringComparer.Ordinal);
-        var wanted = day.Date;
 
         foreach (var line in lines ?? [])
         {
@@ -124,7 +130,7 @@ public sealed class PendingSendStore
                 continue;
             }
 
-            if (at.Date != wanted)
+            if (at < since)
                 continue;
 
             var friendId = parts[2];
@@ -145,6 +151,37 @@ public sealed class PendingSendStore
         return states;
     }
 
+    /// <summary>
+    /// Folds the records for one calendar day. Kept for callers that genuinely mean a day - the retry
+    /// budget and the at-risk warning - while the run itself uses <see cref="FoldSince"/>.
+    /// </summary>
+    public static IReadOnlyDictionary<string, PendingSendState> FoldToday(
+        IEnumerable<string?>? lines, DateTime day)
+        => FoldSince(
+            (lines ?? []).Where(line =>
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                    return false;
+
+                var parts = line.Split(Separator, 4);
+                return parts.Length >= 3
+                    && long.TryParse(parts[1], out var ticks)
+                    && SafeDate(ticks)?.Date == day.Date;
+            }),
+            day.Date);
+
+    private static DateTime? SafeDate(long ticks)
+    {
+        try
+        {
+            return new DateTime(ticks);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>Writes an attempt record and flushes it to disk before returning.</summary>
     public void MarkAttempted(string friendId, string? username, DateTime at) =>
         AppendDurably(FormatAttempt(at, friendId, username));
@@ -156,6 +193,25 @@ public sealed class PendingSendStore
     /// <summary>Writes a definite-failure record and flushes it to disk before returning.</summary>
     public void MarkFailed(string friendId, DateTime at) =>
         AppendDurably(FormatFailed(at, friendId));
+
+    /// <summary>Every entry with a record at or after <paramref name="since"/>, and what is known about it.</summary>
+    public IReadOnlyDictionary<string, PendingSendState> ReadSince(DateTime since)
+    {
+        try
+        {
+            if (!File.Exists(FilePath))
+                return new Dictionary<string, PendingSendState>(StringComparer.Ordinal);
+
+            return FoldSince(File.ReadAllLines(FilePath), since);
+        }
+        catch (Exception ex)
+        {
+            // Unreadable is treated as "nothing recorded", which is the same answer a first run gives.
+            // The caller cannot do better than that, and throwing here would take the run down.
+            System.Diagnostics.Debug.WriteLine($"PendingSendStore.ReadSince failed: {ex.Message}");
+            return new Dictionary<string, PendingSendState>(StringComparer.Ordinal);
+        }
+    }
 
     /// <summary>Every entry with a record for the given day, and what is known about it.</summary>
     public IReadOnlyDictionary<string, PendingSendState> ReadToday(DateTime day)

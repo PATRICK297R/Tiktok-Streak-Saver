@@ -110,6 +110,43 @@ public class PendingSendStoreTests : IDisposable
         Assert.Empty(states);
     }
 
+    /// <summary>
+    /// A record from an earlier slot of the same day must not block a later one.
+    /// <para>
+    /// This is the multi-send case. Folding by calendar day made the 08:00 "sent" record suppress the
+    /// 15:00 run for every friend, so a schedule with several times a day only ever sent once.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void RecordsFromAnEarlierSlotDoNotBlockALaterOne()
+    {
+        var eightAm = Today.AddHours(8);
+        var threePm = Today.AddHours(15);
+
+        var lines = Lines(
+            PendingSendStore.FormatAttempt(eightAm, "f1", "ana"),
+            PendingSendStore.FormatSent(eightAm, "f1"));
+
+        // The 15:00 run only looks at records from its own slot onwards.
+        Assert.Empty(PendingSendStore.FoldSince(lines, threePm));
+
+        // The 08:00 run itself would still see them.
+        Assert.Equal(PendingSendState.Sent, PendingSendStore.FoldSince(lines, eightAm)["f1"]);
+    }
+
+    /// <summary>A record inside the current slot is honoured.</summary>
+    [Fact]
+    public void RecordsInsideTheSlotAreHonoured()
+    {
+        var threePm = Today.AddHours(15);
+        var sentAt = threePm.AddMinutes(3);
+
+        var states = PendingSendStore.FoldSince(
+            Lines(PendingSendStore.FormatSent(sentAt, "f1")), threePm);
+
+        Assert.Equal(PendingSendState.Sent, states["f1"]);
+    }
+
     [Fact]
     public void PruneBeforeDropsEarlierDaysAndKeepsToday()
     {

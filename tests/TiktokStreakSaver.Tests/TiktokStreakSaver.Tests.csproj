@@ -54,6 +54,7 @@
 		<Compile Include="../../src/TiktokStreakSaver/Services/RunFailureReason.cs" Link="Shared/Services/RunFailureReason.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/DeliveryRescan.cs" Link="Shared/Services/DeliveryRescan.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/DeliveryWindow.cs" Link="Shared/Services/DeliveryWindow.cs" />
+		<Compile Include="../../src/TiktokStreakSaver/Services/SendCooldown.cs" Link="Shared/Services/SendCooldown.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/BackupMergePolicy.cs" Link="Shared/Services/BackupMergePolicy.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/BackupTimes.cs" Link="Shared/Services/BackupTimes.cs" />
 		<Compile Include="../../src/TiktokStreakSaver/Services/ContactScanReader.cs" Link="Shared/Services/ContactScanReader.cs" />

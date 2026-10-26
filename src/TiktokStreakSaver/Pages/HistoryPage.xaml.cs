@@ -189,9 +189,17 @@ public partial class HistoryPage : ContentPage
     private View CreateHistoryView(StreakRunResult run)
     {
         // A rehearsal gets its own colour: a green dot would claim a delivery that never happened.
+        //
+        // A run whose sends were not confirmed gets amber rather than green. Green used to mean only that
+        // the script reported success, so a run where nothing could be found in the chats looked identical
+        // to a fully delivered one.
+        var (attempted, confirmed, unverified, _) = SendConfirmationSummary.Summarize(run.FriendResults);
+
         var statusColor = run.DryRun
             ? Color.FromArgb("#F59E0B")
-            : run.Success ? Color.FromArgb("#22C55E") : GetThemeColor("Error", "#9C2121");
+            : !run.Success ? GetThemeColor("Error", "#9C2121")
+            : attempted > 0 && confirmed < attempted ? Color.FromArgb("#F59E0B")
+            : Color.FromArgb("#22C55E");
         var border = new Border
         {
             StrokeThickness = 0,
@@ -240,8 +248,8 @@ public partial class HistoryPage : ContentPage
         else
         {
             // Only surfaced when it matters: an unverified send is the difference between "we think it
-            // went out" and "we know it did".
-            var (attempted, confirmed, unverified, _) = SendConfirmationSummary.Summarize(run.FriendResults);
+            // went out" and "we know it did". The counts come from the top of this method, which the dot
+            // colour already needs.
             if (unverified > 0 && attempted > 0)
             {
                 var verifyLabel = new Label
