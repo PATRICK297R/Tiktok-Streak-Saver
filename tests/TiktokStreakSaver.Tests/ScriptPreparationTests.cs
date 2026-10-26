@@ -211,9 +211,16 @@ public class ScriptPreparationTests
         var script = System.IO.File.ReadAllText(path);
 
         // The helpers exist.
-        Assert.Contains("var findMessageBubbles = function", script);
+        Assert.Contains("var findMessageTextNodes = function", script);
+        Assert.Contains("var findMessageRows = function", script);
         Assert.Contains("var countBubblesWithText = function", script);
         Assert.Contains("var verifyDelivery = function", script);
+
+        // The selectors are the ones checked against a live Business Suite inbox. Pinning them is the point:
+        // if they are ever changed back to guesses, every chat comes back unverified and the app starts
+        // resending to people who already got the message.
+        Assert.Contains("[data-e2e=\"dm-new-message-text\"]", script);
+        Assert.Contains("[data-e2e=\"dm-new-chat-item\"]", script);
 
         // A baseline is taken before the send, so a message identical to an earlier one still counts as new.
         Assert.Contains("countBubblesBeforeSend = countBubblesWithText(message)", script);
@@ -222,6 +229,110 @@ public class ScriptPreparationTests
         var verdicts = System.Text.RegularExpressions.Regex.Matches(script, "var delivery = verifyDelivery\\(\\);");
         Assert.True(verdicts.Count >= 2,
             $"Both send paths have to call verifyDelivery(); found {verdicts.Count}.");
+    }
+
+    /// <summary>
+    /// The rescan must be a look, never a send.
+    /// <para>
+    /// Its whole purpose is to check what already happened, so a rescan that typed into the composer would
+    /// double-message every chat it was sent to inspect. That makes this a correctness requirement rather
+    /// than a style one.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void TheRescanPathNeverSends()
+    {
+        var path = FindRawScript("tiktok_automation.js");
+        if (path is null)
+            return;
+
+        var script = System.IO.File.ReadAllText(path);
+
+        Assert.Contains("var rescanChat = function", script);
+        Assert.Contains("var reportRescanResult = function", script);
+        Assert.Contains("[RescanOnly]", script);
+
+        // Every branch that would send checks the flag first. The three places a send can be started from
+        // are the pre-check, the pre-click match, and the opened-chat match.
+        var guards = System.Text.RegularExpressions.Regex.Matches(script, "if \\(rescanOnly\\)");
+        Assert.True(guards.Count >= 3,
+            $"Every send path needs a rescanOnly guard; found {guards.Count}.");
+    }
+
+    /// <summary>
+    /// The verdict is decided by text AND time, from TikTok's own separators.
+    /// <para>
+    /// Text alone cannot tell today's message from the identical one sent yesterday, which is the whole
+    /// reason the check exists. Pinning the separator selector matters as much: if it is changed back to a
+    /// guess, every message reads as untimed and the app stops being able to confirm anything.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void TheVerdictUsesTheMessagesTimestamp()
+    {
+        var path = FindRawScript("tiktok_automation.js");
+        if (path is null)
+            return;
+
+        var script = System.IO.File.ReadAllText(path);
+
+        Assert.Contains("[data-e2e=\"dm-new-time-separator\"]", script);
+        Assert.Contains("[data-e2e=\"dm-new-message-list\"]", script);
+        Assert.Contains("var parseSeparator = function", script);
+        Assert.Contains("var collectMessagesWithTimes = function", script);
+        Assert.Contains("var judgeAgainstWindow = function", script);
+
+        // The window is passed in by the app, and an unreplaced placeholder must not be read as a date.
+        Assert.Contains("[WindowStart]", script);
+        Assert.Contains("[WindowEnd]", script);
+        Assert.Contains("if (windowStart.indexOf('[') === 0) windowStart = '';", script);
+    }
+
+    /// <summary>
+    /// Only messages we sent count.
+    /// <para>
+    /// A friend replying "🔥" - the same text as the streak message - would otherwise satisfy the check and
+    /// the app would record a delivery that never happened. Every message row links to its sender, and our
+    /// own rows link to us, which is what makes the distinction possible.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void OnlyOurOwnMessagesCount()
+    {
+        var path = FindRawScript("tiktok_automation.js");
+        if (path is null)
+            return;
+
+        var script = System.IO.File.ReadAllText(path);
+
+        Assert.Contains("var senderOf = function", script);
+        Assert.Contains("var resolveSelfHandle = function", script);
+        Assert.Contains("[SelfHandle]", script);
+
+        // The filter is applied, and it only rejects rows that name a different sender - a row with no
+        // handle is kept, so an unrecognised markup cannot turn a delivery into a false "missing".
+        Assert.Contains("if (mine && entry.sender && entry.sender !== mine) continue;", script);
+    }
+
+    /// <summary>
+    /// A message whose time cannot be read must never be reported as missing.
+    /// <para>
+    /// 'absent' is what makes the app send again, so it may only be returned when the times were readable
+    /// and the message genuinely was not in the window. Otherwise a phone set to a locale this parser does
+    /// not handle would resend to everybody.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void AnUnreadableTimeNeverProducesAnAbsentVerdict()
+    {
+        var path = FindRawScript("tiktok_automation.js");
+        if (path is null)
+            return;
+
+        var script = System.IO.File.ReadAllText(path);
+
+        // The guard exists, and it is the text-present-but-untimed case that returns 'unknown'.
+        Assert.Contains("if (textMatches > 0 && timedEntries === 0) return 'unknown';", script);
     }
 
     private static string? FindRawScript(string fileName)

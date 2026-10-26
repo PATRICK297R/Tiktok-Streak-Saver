@@ -139,6 +139,55 @@ public class StreakService : Service
     private bool? _pendingVerification;
 
     /// <summary>
+    /// The text of the send currently in flight, kept so the result can record exactly what went out.
+    /// </summary>
+    private string? _currentSendText;
+
+    /// <summary>
+    /// When the send currently in flight was started. The delivery rescan opens its time window here.
+    /// </summary>
+    private DateTime _currentSendStartedAt;
+
+    /// <summary>True while the second pass is running, so a stray send cannot be started from it.</summary>
+    private bool _isRescanning;
+
+    /// <summary>
+    /// Chats to re-check in the delivery rescan, and how far through them the pass has got.
+    /// </summary>
+    private List<FriendConfig>? _rescanQueue;
+    private int _rescanIndex;
+
+    /// <summary>Tally of the rescan, for the log line and the closing notification.</summary>
+    private int _rescanFound;
+    private int _rescanAbsent;
+    private int _rescanUnknown;
+
+    /// <summary>
+    /// The chats the run was asked to process, kept aside while the resend borrows
+    /// <see cref="_friendsToProcess"/> for its own queue.
+    /// </summary>
+    private List<FriendConfig>? _runFriends;
+
+    /// <summary>
+    /// Rescan passes already run. One is enough: a second pass would only re-examine the same chats, and
+    /// the resend it triggers is what actually fixes them.
+    /// </summary>
+    private const int MaxRescanPasses = 1;
+    private int _rescanPass;
+
+    /// <summary>
+    /// True while the rescan's resend is in flight, so the result updates the existing row instead of
+    /// adding a second one for the same chat.
+    /// </summary>
+    private bool _isResending;
+
+    /// <summary>
+    /// Chats already resent once. A resend that fails again is recorded as failed and left alone - the
+    /// point of the pass is to repair a missed message, not to loop until the streak is satisfied.
+    /// </summary>
+    private readonly HashSet<string> _resentFriendIds = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// Rehearsal mode: walk the automation and confirm each chat is reachable, but never send. The
     /// results are recorded and then excluded from every "sent today" figure.
     /// </summary>
@@ -474,6 +523,19 @@ public class StreakService : Service
             _runResult.DryRun = _dryRun;
             _pendingVerification = null;
 
+            // A new run starts with a clean rescan state. Without this, a second run in the same service
+            // instance would inherit the first run's "already rescanned" flag and skip verification.
+            _rescanPass = 0;
+            _rescanQueue = null;
+            _runFriends = null;
+            _rescanIndex = 0;
+            _isRescanning = false;
+            _isResending = false;
+            _rescanFound = 0;
+            _rescanAbsent = 0;
+            _rescanUnknown = 0;
+            _resentFriendIds.Clear();
+
             // Fresh log per run, in memory and on disk.
             ResetRunLog();
 
@@ -712,14 +774,16 @@ public class StreakService : Service
 
         if (_friendsToProcess == null || _currentFriendIndex >= _friendsToProcess.Count)
         {
-            // All friends processed — mark success only if every friend succeeded
-            var allSucceeded = _runResult?.FriendResults.All(r => r.Success) ?? false;
-            var completionMessage = allSucceeded
-                ? Localization.T("Android_AllMessagesSent")
-                : string.Format(Localization.T("Android_SentOf"),
-                    _runResult?.FriendResults.Count(r => r.Success) ?? 0,
-                    _runResult?.FriendResults.Count ?? 0);
-            CompleteService(allSucceeded, completionMessage);
+            // Everything that was going to be sent has been. Before calling it done, the chats that
+            // reported success are re-opened and checked - a send can report success and still leave no
+            // message in the thread, which is the one failure that silently breaks a streak.
+            if (ShouldRunDeliveryRescan())
+            {
+                StartDeliveryRescan();
+                return;
+            }
+
+            FinishRun();
             return;
         }
 
@@ -729,6 +793,280 @@ public class StreakService : Service
         AppLog("PROCESS", logTarget, "Starting regular messaging");
 
         SendCurrentFriendMessage();
+    }
+
+    // ── Delivery rescan ──────────────────────────────────────────────────────
+    //
+    // After the run has sent to everyone, the chats that reported success are opened again and checked.
+    // This exists because "the script said success" and "the message is in the thread" are not the same
+    // claim: the composer clears for reasons other than a delivered message, so a send can look fine and
+    // leave nothing behind. That is the failure that breaks a streak silently, and the only way to catch
+    // it is to go back and look.
+    //
+    // Anything not found is resent once. The pass is deliberately bounded - one scan, one resend - so a
+    // disagreement with TikTok's markup can never turn into a send loop.
+
+    /// <summary>
+    /// Whether the second pass should run at all.
+    /// <para>
+    /// Skipped for a rehearsal (nothing was sent), when the user cancelled, and for runs that produced no
+    /// successful send to check.
+    /// </para>
+    /// </summary>
+    private bool ShouldRunDeliveryRescan()
+    {
+        if (_dryRun || _isCancelRequested)
+            return false;
+
+        if (_rescanPass >= MaxRescanPasses)
+            return false;
+
+        if (_runResult == null)
+            return false;
+
+        // Only chats the app believes it delivered to. A failed send is already reported as failed, and
+        // resending it here would be a second attempt dressed up as verification.
+        return _runResult.FriendResults.Any(r => r.Success && !r.DryRun);
+    }
+
+    /// <summary>Builds the queue of chats to re-check and starts the pass.</summary>
+    private void StartDeliveryRescan()
+    {
+        _rescanPass++;
+        _isRescanning = true;
+        _rescanIndex = 0;
+        _rescanFound = 0;
+        _rescanAbsent = 0;
+        _rescanUnknown = 0;
+
+        // Matched back to the friend list so the resend has a friend to send to. A result whose friend is
+        // no longer configured is left out: there is nothing to resend to.
+        _rescanQueue = new List<FriendConfig>();
+
+        foreach (var result in DeliveryRescan.Candidates(_runResult!.FriendResults, _resentFriendIds))
+        {
+            var friend = _friendsToProcess?.FirstOrDefault(f => f.Id == result.FriendId)
+                ?? _settingsService?.GetEnabledFriends().FirstOrDefault(f => f.Id == result.FriendId);
+
+            if (friend != null && !_rescanQueue.Any(f => f.Id == friend.Id))
+                _rescanQueue.Add(friend);
+        }
+
+        AppLog("SYSTEM", "-", $"Verifying delivery for {_rescanQueue.Count} chats");
+
+        UpdateNotification(string.Format(Localization.T("Android_RescanStarting"), _rescanQueue.Count));
+
+        _mainHandler?.PostDelayed(RescanNextFriend, 1500);
+    }
+
+    /// <summary>Opens the next chat in the queue and asks the script to look, without sending.</summary>
+    private void RescanNextFriend()
+    {
+        if (_isCancelRequested)
+        {
+            FinishRun();
+            return;
+        }
+
+        if (_rescanQueue == null || _rescanIndex >= _rescanQueue.Count)
+        {
+            EndDeliveryRescan();
+            return;
+        }
+
+        var friend = _rescanQueue[_rescanIndex];
+        var label = friend.IsGroup ? friend.DisplayName : $"@{friend.Username}";
+
+        var result = _runResult?.FriendResults.FirstOrDefault(r => r.FriendId == friend.Id);
+
+        // The text that actually went out, recorded when it was sent. Recomputing it here would break
+        // whenever the run used a randomised variant, and the rescan would then search for text that was
+        // never sent and report every chat as missing.
+        var message = DeliveryRescan.TextToSearch(result);
+        if (string.IsNullOrEmpty(message))
+        {
+            AppLog("RESCAN", label, "No record of what was sent - cannot verify");
+            _rescanUnknown++;
+            _rescanIndex++;
+            _mainHandler?.PostDelayed(RescanNextFriend, 500);
+            return;
+        }
+
+        // The stretch of time this message is expected in. It opens when the send was attempted, not at the
+        // minute the user scheduled: a run takes time, and a message a few minutes late is still delivered.
+        // Without a recorded time there is no window, and the rescan falls back to the text alone - a
+        // weaker answer it reports as unconfirmed rather than as missing.
+        var window = DeliveryRescan.WindowFor(result);
+        var windowStart = window?.Start.ToString("O") ?? string.Empty;
+        var windowEnd = window?.End.ToString("O") ?? string.Empty;
+
+        UpdateNotification(string.Format(Localization.T("Android_RescanProgress"),
+            _rescanIndex + 1, _rescanQueue.Count, label));
+
+        if (_currentFriendTimeoutAction != null)
+        {
+            _mainHandler?.RemoveCallbacks(_currentFriendTimeoutAction);
+            _currentFriendTimeoutAction = null;
+        }
+
+        _currentFriendTimeoutAction = () =>
+        {
+            if (_isCancelRequested) return;
+            AppLog("RESCAN", label, "Timed out - treated as unconfirmed");
+            OnRescanResult(friend.IsGroup ? friend.DisplayName : friend.Username, "unknown");
+        };
+        _mainHandler?.PostDelayed(_currentFriendTimeoutAction, FriendTimeoutMs);
+
+        var target = friend.IsGroup ? friend.DisplayName : friend.Username;
+        var js = GetFriendMessageScript(target, message, friend.IsGroup, rescanOnly: true,
+            windowStart: windowStart, windowEnd: windowEnd);
+        _webView?.EvaluateJavascript(js, null);
+    }
+
+    /// <summary>Records the rescan's verdict for the chat that was just opened.</summary>
+    internal void OnRescanResult(string username, string verdict)
+    {
+        if (_currentFriendTimeoutAction != null)
+        {
+            _mainHandler?.RemoveCallbacks(_currentFriendTimeoutAction);
+            _currentFriendTimeoutAction = null;
+        }
+
+        if (_isCancelRequested) return;
+
+        var friend = _rescanQueue != null && _rescanIndex < _rescanQueue.Count
+            ? _rescanQueue[_rescanIndex]
+            : null;
+
+        if (friend == null) return;
+
+        var label = friend.IsGroup ? friend.DisplayName : $"@{friend.Username}";
+        var result = _runResult?.FriendResults.FirstOrDefault(r => r.FriendId == friend.Id);
+
+        switch (verdict)
+        {
+            case "found":
+                _rescanFound++;
+                if (result != null) result.Verified = true;
+                AppLog("RESCAN", label, "Message found in chat");
+                break;
+
+            case "absent":
+                _rescanAbsent++;
+                if (result != null) result.Verified = false;
+                AppLog("RESCAN", label, "Message NOT found - will resend");
+                break;
+
+            default:
+                _rescanUnknown++;
+                AppLog("RESCAN", label, "Could not read the chat - left as unconfirmed");
+                break;
+        }
+
+        _rescanIndex++;
+        _mainHandler?.PostDelayed(RescanNextFriend, 1500);
+    }
+
+    /// <summary>
+    /// Ends the pass: resends to the chats whose message was not found, then finishes the run.
+    /// </summary>
+    private void EndDeliveryRescan()
+    {
+        AppLog("SYSTEM", "-",
+            $"Verification done: {_rescanFound} confirmed, {_rescanAbsent} missing, {_rescanUnknown} unreadable");
+
+        var missing = DeliveryRescan.NeedingResend(_runResult?.FriendResults, _resentFriendIds);
+
+        if (missing.Count == 0)
+        {
+            FinishRun();
+            return;
+        }
+
+        // Matched back to friends, because the resend needs somewhere to send.
+        var missingFriends = missing
+            .Select(r => _friendsToProcess?.FirstOrDefault(f => f.Id == r.FriendId)
+                ?? _settingsService?.GetEnabledFriends().FirstOrDefault(f => f.Id == r.FriendId))
+            .Where(f => f != null)
+            .Select(f => f!)
+            .ToList();
+
+        foreach (var friend in missingFriends)
+            _resentFriendIds.Add(friend.Id);
+
+        if (missingFriends.Count == 0)
+        {
+            FinishRun();
+            return;
+        }
+
+        // The resend reuses the normal send path, one chat at a time, so it inherits the typing, the
+        // verification and the durable record rather than duplicating any of it.
+        //
+        // The run's own list is put aside first: the send path walks _friendsToProcess, and CompleteService
+        // uses it to close out chats that never reported. Leaving the resend queue in there would lose the
+        // chats from the first pass.
+        _runFriends ??= _friendsToProcess;
+
+        _rescanQueue = missingFriends;
+        _rescanIndex = 0;
+        _isResending = true;
+
+        AppLog("SYSTEM", "-", $"Resending to {missingFriends.Count} chats that were not found");
+        UpdateNotification(string.Format(Localization.T("Android_RescanResending"), missingFriends.Count));
+
+        _mainHandler?.PostDelayed(ResendNextFriend, 1500);
+    }
+
+    /// <summary>Sends to the next chat that failed verification.</summary>
+    private void ResendNextFriend()
+    {
+        if (_isCancelRequested)
+        {
+            FinishRun();
+            return;
+        }
+
+        if (_rescanQueue == null || _rescanIndex >= _rescanQueue.Count)
+        {
+            _isResending = false;
+            _isRescanning = false;
+            FinishRun();
+            return;
+        }
+
+        var friend = _rescanQueue[_rescanIndex];
+
+        // Routed through the same send path the run used. _isResending tells OnMessageResult to update
+        // the existing row rather than append a duplicate for the same chat.
+        _friendsToProcess = _rescanQueue;
+        _currentFriendIndex = _rescanIndex;
+        SendCurrentFriendMessage();
+    }
+
+    /// <summary>Completes the run with the outcome the rescan settled on.</summary>
+    private void FinishRun()
+    {
+        _isRescanning = false;
+        _isResending = false;
+
+        // Put the run's own list back. The resend borrowed it for its queue, and CompleteService reads it
+        // to close out any chat that never reported - which has to be the chats the run selected, not the
+        // handful the resend was working through.
+        if (_runFriends != null)
+        {
+            _friendsToProcess = _runFriends;
+            _runFriends = null;
+        }
+
+        var allSucceeded = _runResult?.FriendResults.All(r => r.Success) ?? false;
+        var completionMessage = allSucceeded
+            ? Localization.T("Android_AllMessagesSent")
+            : string.Format(Localization.T("Android_SentOf"),
+                _runResult?.FriendResults.Count(r => r.Success) ?? 0,
+                _runResult?.FriendResults.Count ?? 0);
+
+        CompleteService(allSucceeded, completionMessage);
     }
 
     private void SendCurrentFriendMessage()
@@ -777,6 +1115,8 @@ public class StreakService : Service
         }
 
         _allowSendRetries = true;
+        _currentSendText = message;
+        _currentSendStartedAt = DateTime.Now;
         var js = GetFriendMessageScript(target, message, friend.IsGroup);
 
         // Written and flushed to disk before the message goes out, not after it is confirmed. If the
@@ -812,7 +1152,8 @@ public class StreakService : Service
         }
     }
 
-    private string GetFriendMessageScript(string target, string message, bool isGroup)
+    private string GetFriendMessageScript(string target, string message, bool isGroup,
+        bool rescanOnly = false, string? windowStart = null, string? windowEnd = null)
     {
         // Escape special characters for JavaScript string literals
         target ??= string.Empty;
@@ -827,6 +1168,15 @@ public class StreakService : Service
         // If this placeholder ever went unreplaced the script would compare against the literal text and
         // decide against dry run, which is the safe direction: it falls back to normal sending.
         automationScript = automationScript.Replace("[DryRun]", _dryRun ? "true" : "false");
+
+        // The rescan placeholders default to the sending behaviour, so a build where they are missing
+        // still sends rather than silently doing nothing.
+        automationScript = automationScript.Replace("[RescanOnly]", rescanOnly ? "true" : "false");
+        automationScript = automationScript.Replace("[WindowStart]", windowStart ?? string.Empty);
+        automationScript = automationScript.Replace("[WindowEnd]", windowEnd ?? string.Empty);
+        // Left empty so the script reads the handle from the page, which is where it is known for certain.
+        automationScript = automationScript.Replace("[SelfHandle]", string.Empty);
+
         return automationScript;
     }
 
@@ -897,7 +1247,7 @@ public class StreakService : Service
             // A definite failure means nothing was sent, so this entry must not block a later retry today.
             PendingSends.MarkFailed(friend.Id, DateTime.Now);
 
-            _runResult?.FriendResults.Add(new FriendMessageResult
+            RecordFriendResult(new FriendMessageResult
             {
                 FriendId = friend.Id,
                 Username = username,
@@ -909,6 +1259,18 @@ public class StreakService : Service
             PublishLiveProgress();
             _failureAttemptsForCurrentFriend = 0;
             _currentFriendIndex++;
+
+            if (_isResending)
+            {
+                // The resend failed again. The row above already says so, and there is nothing further to
+                // try - the pass exists to repair one missed message, not to loop.
+                _rescanIndex++;
+                UpdateNotification(string.Format(Localization.T("Android_RescanProgress"),
+                    Math.Min(_rescanIndex, _rescanQueue?.Count ?? 0), _rescanQueue?.Count ?? 0, label));
+                _mainHandler?.PostDelayed(ResendNextFriend, 3000);
+                return;
+            }
+
             UpdateNotification(string.Format(Localization.T("Android_ProgressFailed"),
                 _currentFriendIndex, _friendsToProcess.Count, label), _currentFriendIndex, _friendsToProcess.Count);
             _mainHandler?.PostDelayed(ProcessNextFriend, 3000);
@@ -947,22 +1309,67 @@ public class StreakService : Service
         var verification = SendVerification.Classify(scriptReportedSuccess: true, composerCleared: _pendingVerification);
         _pendingVerification = null;
 
-        AppLog("SUCCESS", label, $"Message sent ({SendVerification.Describe(verification)})");
+        AppLog(_isResending ? "RESEND" : "SUCCESS", label,
+            $"Message sent ({SendVerification.Describe(verification)})");
 
         _settingsService.UpdateFriend(friend);
         PendingSends.MarkSent(friend.Id, DateTime.Now);
 
-        _runResult?.FriendResults.Add(new FriendMessageResult
+        RecordFriendResult(new FriendMessageResult
         {
             FriendId = friend.Id,
             Username = username,
             Success = true,
             ErrorMessage = null,
             Verified = SendVerification.ToVerifiedFlag(verification),
+            // Kept so the rescan searches for what was actually sent, not what would be sent now.
+            MessageText = _currentSendText,
+            // The window the rescan will look in. The attempt's start, not the scheduled minute.
+            SentAt = _currentSendStartedAt,
         });
 
         PublishLiveProgress();
+
+        if (_isResending)
+        {
+            // The resend landed. The row it updated is the one from the first attempt, so the history
+            // still shows one entry per chat rather than a send followed by a mysterious second one.
+            //
+            // The friend's own counters are rolled back first: the first attempt already counted this as
+            // a success, and counting it again would inflate the lifetime total for a chat that was only
+            // ever messaged once.
+            friend.SuccessCount = Math.Max(0, friend.SuccessCount - 1);
+            _settingsService.UpdateFriend(friend);
+
+            _rescanIndex++;
+            UpdateNotification(string.Format(Localization.T("Android_RescanProgress"),
+                Math.Min(_rescanIndex, _rescanQueue?.Count ?? 0), _rescanQueue?.Count ?? 0, label));
+            _mainHandler?.PostDelayed(ResendNextFriend, 3000);
+            return;
+        }
+
         AdvanceToNextFriend(username);
+    }
+
+    /// <summary>
+    /// Adds a result to the run, or updates the existing row when this is a resend.
+    /// <para>
+    /// A resend is not a second event: it is the same chat's outcome being corrected. Appending would put
+    /// two entries for one friend in the history and make the run look like it messaged them twice.
+    /// </para>
+    /// </summary>
+    private void RecordFriendResult(FriendMessageResult result)
+    {
+        if (_runResult == null)
+            return;
+
+        if (_isResending)
+        {
+            DeliveryRescan.ApplyResend(_runResult.FriendResults, result);
+            return;
+        }
+
+        _runResult.FriendResults.Add(result);
     }
 
     /// <summary>
@@ -983,6 +1390,12 @@ public class StreakService : Service
 
     private void AdvanceToNextFriend(string username)
     {
+        if (_isResending)
+        {
+            // Handled at the call site: the resend walks its own queue rather than the run's.
+            return;
+        }
+
         var prevFriend = _friendsToProcess != null && _currentFriendIndex < _friendsToProcess.Count
             ? _friendsToProcess[_currentFriendIndex] : null;
         var sentLabel = prevFriend?.IsGroup == true ? prevFriend.DisplayName : $"@{username}";
@@ -1288,6 +1701,16 @@ public class StreakService : Service
         public void ReportVerification(bool composerCleared)
         {
             _service._mainHandler?.Post(() => _service._pendingVerification = composerCleared);
+        }
+
+        /// <summary>
+        /// The rescan's verdict for the chat it just opened: "found", "absent" or "unknown".
+        /// </summary>
+        [JavascriptInterface]
+        [Export("onRescanResult")]
+        public void OnRescanResult(string username, string verdict)
+        {
+            _service._mainHandler?.Post(() => _service.OnRescanResult(username, verdict));
         }
 
         [JavascriptInterface]

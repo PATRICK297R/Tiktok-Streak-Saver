@@ -6,6 +6,28 @@
     var message = '[Message]';
     var isGroup = '[IsGroup]' === 'true';
     var dryRun = '[DryRun]' === 'true';
+
+    // Rescan mode: open the chat and only look for the message, sending nothing.
+    //
+    // This is the second pass the app runs after a whole run finishes. A send that reported success can
+    // still be a message that never appeared - the composer clears for other reasons too - so the app
+    // reopens each chat afterwards and asks again. It has to be a separate injection rather than a
+    // delayed re-read, because by then the page has moved on to the next chat.
+    var rescanOnly = '[RescanOnly]' === 'true';
+
+    // The stretch of time the message is expected to have been sent in, as ISO strings.
+    //
+    // The app sets the start to when the send was attempted and the end to fifteen minutes later - not to
+    // the exact minute the user scheduled, because the run takes time and a message that arrives a few
+    // minutes late is still fine. Anything in that window with the right text counts as delivered.
+    //
+    // Empty when the app could not work out a window, in which case only the text is compared and the
+    // answer is weaker. A placeholder that was never replaced still starts with "[", which is treated the
+    // same way rather than being parsed as a date.
+    var windowStart = '[WindowStart]';
+    var windowEnd = '[WindowEnd]';
+    if (windowStart.indexOf('[') === 0) windowStart = '';
+    if (windowEnd.indexOf('[') === 0) windowEnd = '';
     var found = false;
     var chatIndex = 0;
     var chatItems = [];
@@ -732,88 +754,299 @@
         return (editor.textContent || '').trim();
     };
 
-    // ── Delivery proof ───────────────────────────────────────────────────────
+    // Our own handle, so a message the other person sent with the same text is not counted as ours.
+    //
+    // Checked against a live inbox: every message row links to the sender's profile, and a message we sent
+    // links to our own. Without this, a friend replying "🔥" - the same as the streak message - would make
+    // the rescan believe our message had arrived when it never did.
+    //
+    // Empty when it could not be worked out, in which case the filter is skipped rather than excluding
+    // everything.
+    var selfHandle = '[SelfHandle]';
+    if (selfHandle.indexOf('[') === 0) selfHandle = '';
+    if (selfHandle.indexOf('@') === 0) selfHandle = selfHandle.substring(1);
+    selfHandle = selfHandle.toLowerCase().trim();
+
+    // The handle a message row belongs to, or null when the row does not name one.
+    var senderOf = function (row) {
+        var link = row.querySelector('a[href^="/@"]');
+        if (!link) return null;
+        var href = link.getAttribute('href') || '';
+        var match = href.match(/\/@([^\/\?]+)/);
+        return match && match[1] ? match[1].toLowerCase().trim() : null;
+    };
+
+    // Our own handle, read from the page when the app did not supply one.
+    //
+    // The nav bar links to the signed-in profile, which is the same link a message we sent carries - that
+    // was checked against a live inbox, where the outgoing row pointed at the account's own handle and the
+    // incoming ones at the friend's.
+    var resolveSelfHandle = function () {
+        if (selfHandle) return selfHandle;
+
+        try {
+            var doc = getRootDoc();
+            var nav = doc.querySelector('[data-e2e="nav-profile"] a[href^="/@"]') ||
+                doc.querySelector('[data-e2e="profile-icon"] a[href^="/@"]') ||
+                doc.querySelector('a[data-e2e="nav-profile"][href^="/@"]');
+
+            if (nav) {
+                var href = nav.getAttribute('href') || '';
+                var m = href.match(/\/@([^\/\?]+)/);
+                if (m && m[1]) {
+                    selfHandle = m[1].toLowerCase().trim();
+                    log('[VERIFY] Own handle from nav: ' + selfHandle);
+                    return selfHandle;
+                }
+            }
+        } catch (e) {
+            log('[VERIFY] Could not read own handle: ' + e.message);
+        }
+
+        return '';
+    };
+
     //
     // An empty composer only proves TikTok accepted the click. It does not prove a message appeared in
     // the thread: the composer can be cleared by the click handler, by a re-render, or by the panel being
     // torn down, and every one of those used to be reported as a delivered message. What the user
-    // actually wants to know is whether the bubble is there.
+    // actually wants to know is whether the message is in the thread.
     //
-    // So after sending, the thread is read back and searched for a bubble carrying this exact message
-    // that was not there before the send. That is the strongest evidence available from inside the page:
-    // it is TikTok's own rendering of the message, not an inference from our own clicks.
-
-    // The thread's message bubbles, oldest first.
+    // The check is text AND time. Text alone is not enough: the default streak message is the same every
+    // day, so "a message with this text exists" is true even when today's send never landed. Time alone is
+    // not enough either, because a chat can hold several messages in the same minute. Together they are a
+    // real answer.
     //
-    // The selectors are broad on purpose and then filtered by the caller, because TikTok renames data-e2e
-    // values without warning. An empty result is treated as "cannot prove it" rather than "not delivered",
-    // which is why a missing selector degrades the verdict instead of failing the send.
-    var findMessageBubbles = function () {
-        var doc = getRootDoc();
-        var selectors = [
-            '[data-e2e="chat-message"]',
-            '[data-e2e*="message-bubble"]',
-            '[data-e2e*="msg-bubble"]',
-            '[class*="MessageBubble"]',
-            '[class*="messageBubble"]',
-            '[class*="DivMessageBubble"]'
-        ];
+    // The time comes from TikTok's own separators, which sit above the messages they describe and read
+    // "October 25, 2026 21:45" - or just "03:02" when it is today. Walking the message list in document
+    // order and remembering the last separator seen maps every message to its time; that was checked
+    // against a live inbox (20 of 20 rows mapped).
 
-        for (var i = 0; i < selectors.length; i++) {
-            var found = doc.querySelectorAll(selectors[i]);
-            if (found && found.length > 0) {
-                return found;
+    // Parses a separator into the window of time it covers.
+    //
+    // A separator marks when the messages under it were sent, and TikTok collapses a run of messages into
+    // one separator - so everything after "21:45" is 21:45 or later. The window is therefore open-ended
+    // forward, and only bounded when the next separator supplies the end.
+    //
+    // Returns null when the text cannot be read as a time, which the caller treats as "no time known"
+    // rather than as a mismatch.
+    var parseSeparator = function (text, now) {
+        var raw = (text || '').replace(/\s+/g, ' ').trim();
+        if (raw.length === 0) return null;
+
+        // "21:45" or "21.45" - today, so the date is the current one.
+        var timeOnly = raw.match(/^(\d{1,2})[:.](\d{2})$/);
+        if (timeOnly) {
+            var h = parseInt(timeOnly[1], 10);
+            var m = parseInt(timeOnly[2], 10);
+            if (h > 23 || m > 59) return null;
+            var d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
+            return { start: d, explicit: false };
+        }
+
+        // "October 25, 2026 21:45", and the same with AM/PM for phones set to a 12-hour clock.
+        var full = raw.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4}),?\s+(\d{1,2})[:.](\d{2})(?:\s*([AaPp])\.?[Mm]\.?)?$/);
+        if (full) {
+            var months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+            var month = months.indexOf(full[1].slice(0, 3).toLowerCase());
+            if (month < 0) return null;
+
+            var day = parseInt(full[2], 10);
+            var year = parseInt(full[3], 10);
+            var hh = parseInt(full[4], 10);
+            var mm = parseInt(full[5], 10);
+
+            if (full[6]) {
+                var pm = full[6].toLowerCase() === 'p';
+                if (hh === 12) hh = pm ? 12 : 0;
+                else if (pm) hh += 12;
             }
+
+            if (hh > 23 || mm > 59) return null;
+
+            return { start: new Date(year, month, day, hh, mm, 0, 0), explicit: true };
         }
 
         return null;
     };
 
-    // How many bubbles already carry this message. Taken before sending, so a message identical to one
-    // sent earlier today is still counted as new when its count goes up.
-    var countBubblesWithText = function (text) {
-        var bubbles = findMessageBubbles();
-        if (!bubbles) return null;
+    // Every text message in the thread, paired with the time window it falls in.
+    //
+    // Returns null when the list cannot be read at all, which is a different answer from "nothing matched".
+    var collectMessagesWithTimes = function () {
+        var doc = getRootDoc();
+        var list = doc.querySelector('[data-e2e="dm-new-message-list"]');
+        if (!list) return null;
 
-        var wanted = (text || '').replace(/\s+/g, ' ').trim();
-        if (wanted.length === 0) return null;
+        var now = new Date();
+        var entries = [];
+        var current = null;
 
-        var count = 0;
-        for (var i = 0; i < bubbles.length; i++) {
-            var body = (bubbles[i].textContent || '').replace(/\s+/g, ' ').trim();
-            // Containment rather than equality: the bubble also holds the timestamp and, in a group, the
-            // sender's name, so it is a superset of the message.
-            if (body.indexOf(wanted) !== -1) {
-                count++;
+        var walker = doc.createTreeWalker(list, NodeFilter.SHOW_ELEMENT);
+        var node;
+
+        while ((node = walker.nextNode())) {
+            var e2e = node.getAttribute ? node.getAttribute('data-e2e') : null;
+
+            if (e2e === 'dm-new-time-separator') {
+                current = parseSeparator(node.textContent, now);
+                continue;
             }
+
+            if (e2e !== 'dm-new-chat-item') continue;
+
+            var textNode = node.querySelector('[data-e2e="dm-new-message-text"]');
+            if (!textNode) continue;
+
+            var body = (textNode.textContent || '').replace(/\s+/g, ' ').trim();
+            if (body.length === 0) continue;
+
+            entries.push({ text: body, start: current ? current.start : null, sender: senderOf(node) });
         }
 
-        return count;
+        if (entries.length === 0) return null;
+
+        // Each entry's window ends where the next entry's starts. Messages sharing a separator share a
+        // start, so the end is taken from the first later entry with a strictly later start - which is the
+        // next separator, not the next message.
+        for (var i = 0; i < entries.length; i++) {
+            var end = null;
+            if (entries[i].start) {
+                for (var j = i + 1; j < entries.length; j++) {
+                    if (entries[j].start && entries[j].start.getTime() > entries[i].start.getTime()) {
+                        end = entries[j].start;
+                        break;
+                    }
+                }
+            }
+            entries[i].end = end;
+        }
+
+        return entries;
     };
 
-    var countBubblesBeforeSend = null;
-
-    // The verdict, from the strongest signal available.
+    // The immediate check after a send, while the chat is still open.
     //
-    //   'found'     - a new bubble with this message is in the thread
-    //   'absent'    - the thread was readable and the message is not in it
-    //   'unknown'   - the thread could not be read, so nothing can be claimed either way
+    // Same text-and-time judgement as the rescan, against the same window. There is no baseline any more:
+    // a count could not tell yesterday's identical message from today's, whereas the time can.
     var verifyDelivery = function () {
-        var after = countBubblesWithText(message);
+        var entries = collectMessagesWithTimes();
+        if (!entries) return 'unknown';
 
-        if (after === null) {
-            return 'unknown';
-        }
-
-        if (countBubblesBeforeSend === null) {
-            // No baseline was taken, so the only honest question is whether the message is there at all.
-            return after > 0 ? 'found' : 'absent';
-        }
-
-        return after > countBubblesBeforeSend ? 'found' : 'absent';
+        return judgeAgainstWindow(entries, message, windowStart, windowEnd);
     };
 
     // ── Chat Processing ──────────────────────────────────────────────────────
+
+    // The verdict for one chat, from the messages it holds and the window they are expected in.
+    //
+    //   'found'   - a message with the right text sits inside the window
+    //   'absent'  - the thread was readable and no such message is there
+    //   'unknown' - the thread was readable but the times could not be, so nothing can be claimed
+    //
+    // 'unknown' rather than 'absent' whenever the times are missing is the important part: 'absent' makes
+    // the app send again, and sending again on a guess is how someone gets two messages.
+    var judgeAgainstWindow = function (entries, wantedText, startIso, endIso) {
+        var wanted = (wantedText || '').replace(/\s+/g, ' ').trim();
+        if (wanted.length === 0) return 'unknown';
+
+        var mine = resolveSelfHandle();
+
+        var start = startIso ? new Date(startIso) : null;
+        var end = endIso ? new Date(endIso) : null;
+
+        if (start && isNaN(start.getTime())) start = null;
+        if (end && isNaN(end.getTime())) end = null;
+
+        var textMatches = 0;
+        var timedMatches = 0;
+        var timedEntries = 0;
+
+        for (var i = 0; i < entries.length; i++) {
+            var entry = entries[i];
+            if ((entry.text || '').indexOf(wanted) === -1) continue;
+
+            // A row that names the sender as someone else is not our message. Rows with no handle at all
+            // are kept, because the markup varies and dropping them would turn a delivered message into
+            // "not found" - the direction that causes a resend.
+            if (mine && entry.sender && entry.sender !== mine) continue;
+
+            textMatches++;
+
+            // Without a window, the text is the only evidence there is. That is a weaker claim, so it is
+            // reported as such instead of being treated as proof.
+            if (!start) continue;
+
+            if (!entry.start) continue;
+            timedEntries++;
+
+            if (entry.start.getTime() < start.getTime()) continue;
+            if (end && entry.start.getTime() > end.getTime()) continue;
+
+            timedMatches++;
+        }
+
+        if (!start) {
+            // No window: fall back to "the message is somewhere in this chat". A message repeated from an
+            // earlier day would satisfy this, which is why the app does not resend on it.
+            return textMatches > 0 ? 'found' : 'unknown';
+        }
+
+        if (timedMatches > 0) return 'found';
+
+        // The message text is there but the times could not be read for any of those matches. Claiming
+        // 'absent' here would send a second copy of a message that may well have arrived.
+        if (textMatches > 0 && timedEntries === 0) return 'unknown';
+
+        return 'absent';
+    };
+
+    // Rescan: the chat is already open, so report whether the message is in the thread and stop.
+    //
+    // Nothing is typed and nothing is clicked here. The whole point of the second pass is to look, so a
+    // rescan that accidentally sent would defeat it - and would double-message the very chats it was
+    // meant to check.
+    var reportRescanResult = function () {
+        var entries = collectMessagesWithTimes();
+
+        // Safety net. An unreadable thread and an empty one are different things, and only one of them is
+        // real: every conversation that has ever been used holds at least one message. Zero entries means
+        // the markup is not what this script expects, not that the chat is empty - and reporting "absent"
+        // there would tell the app to resend to everyone.
+        if (!entries) {
+            log('[RESCAN] No messages found at all - thread unreadable, cannot confirm');
+            if (typeof StreakApp !== 'undefined') {
+                StreakApp.onRescanResult(userName, 'unknown');
+            }
+            return;
+        }
+
+        var verdict = judgeAgainstWindow(entries, message, windowStart, windowEnd);
+
+        log('[RESCAN] Messages: ' + entries.length +
+            ', window: ' + (windowStart ? new Date(windowStart).toString() : 'any') +
+            ' -> ' + verdict);
+
+        if (typeof StreakApp !== 'undefined') {
+            StreakApp.onRescanResult(userName, verdict);
+        }
+    };
+
+    var rescanChat = function () {
+        // The panel is given a moment to render the conversation: opening a chat is asynchronous and the
+        // bubble list is empty until it arrives, which would read as "absent" on a message that is there.
+        setTimeout(function () {
+            if (business && chatPanelCrashed()) {
+                log('[RESCAN] Chat panel is showing an error');
+                if (typeof StreakApp !== 'undefined') {
+                    StreakApp.onRescanResult(userName, 'unknown');
+                }
+                return;
+            }
+
+            reportRescanResult();
+        }, 2000);
+    };
 
     var sendMessageViaButton = function () {
         var messageInput = findMessageInput();
@@ -831,6 +1064,7 @@
         }
 
         log('[CHAT] Found message input, typing...');
+
         typeMessage(messageInput, function () {
             var typedContent = (messageInput.textContent || '').trim();
             if (typedContent.length === 0) {
@@ -840,11 +1074,6 @@
             }
 
             sendMessage(messageInput);
-
-            // Baseline for the delivery check, taken after typing but before the send is dispatched.
-            countBubblesBeforeSend = countBubblesWithText(message);
-            log('[VERIFY] Bubbles carrying this message before send: ' +
-                (countBubblesBeforeSend === null ? 'thread unreadable' : countBubblesBeforeSend));
 
             if (business) {
                 // The composer node captured before typing is usually detached by the time Draft.js
@@ -980,6 +1209,12 @@
                         log('[CHAT] MATCH — Found @' + match[1] + ' in item ' + (chatIndex + 1) + ' (pre-click)');
                         safeClick(chatItem);
                         found = true;
+
+                        if (rescanOnly) {
+                            setTimeout(rescanChat, 1500);
+                            return;
+                        }
+
                         setTimeout(sendMessageViaButton, 1500);
                         return;
                     }
@@ -1035,6 +1270,12 @@
                 if (isTargetUser(currentName)) {
                     found = true;
                     log('[CHAT] MATCH — Found ' + (isGroup ? 'group' : 'target user') + ': "' + currentName + '"');
+
+                    if (rescanOnly) {
+                        rescanChat();
+                        return;
+                    }
+
                     sendMessageViaButton();
                     return;
                 }
@@ -1079,6 +1320,13 @@
             if (preCheckName && isTargetUser(preCheckName)) {
                 log('[INIT] Target ' + (isGroup ? 'group' : 'chat') + ' already open: ' + preCheckName);
                 found = true;
+
+                if (rescanOnly) {
+                    log('[INIT] Rescan mode - checking only, nothing will be sent');
+                    setTimeout(rescanChat, 500);
+                    return;
+                }
+
                 setTimeout(sendMessageViaButton, 500);
                 return;
             }

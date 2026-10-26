@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!--
-    Splash background, light / default system theme.
+    Splash background, light / default system theme: black, with the white flame on top.
 
-    Brand red in both themes on purpose. The splash used to be red below Android 12 and white from 12
-    onwards, so the same app opened two different ways depending on the phone - and the Android 12 one
-    put a red flame on that white, leaving the brand colour out of the launch entirely.
+    Deliberately not the brand red any more. A full-screen red flash at every launch is loud, and on a
+    phone used in a dark room it is the brightest thing the user sees all day. Black is quiet, and the
+    white flame still reads instantly as this app.
   -->
-  <color name="maui_splash_color">#FE2C55</color>
+  <color name="maui_splash_color">#000000</color>
 
   <!-- Android 12+ themed splash background (used by App.StartingTheme / values-v31). Matches above. -->
-  <color name="splash_bg">#FE2C55</color>
+  <color name="splash_bg">#000000</color>
 </resources>

@@ -132,14 +132,36 @@ public class FriendMessageResult
     public DateTime Timestamp { get; set; } = DateTime.Now;
 
     /// <summary>
-    /// Whether the send was actually confirmed, separately from <see cref="Success"/>.
+    /// Whether the message was actually found in the chat, separately from <see cref="Success"/>.
     /// <list type="bullet">
-    ///   <item><description><c>true</c> - the composer cleared, so TikTok accepted the message.</description></item>
-    ///   <item><description><c>false</c> - the script reported success but nothing confirmed it.</description></item>
-    ///   <item><description><c>null</c> - not checked: a failed send, or an entry written by an older build.</description></item>
+    ///   <item><description><c>true</c> - a message with the right text was found inside the expected time window.</description></item>
+    ///   <item><description><c>false</c> - the chat was readable and the message was not there.</description></item>
+    ///   <item><description><c>null</c> - not checked, or the chat could not be read: a failed send, a rehearsal, or an entry written by an older build.</description></item>
     /// </list>
     /// </summary>
     public bool? Verified { get; set; }
+
+    /// <summary>
+    /// When this chat's message was sent, recorded at the moment the automation was injected.
+    /// <para>
+    /// The delivery rescan runs after the whole run has finished and has to decide whether the message is
+    /// in the thread. It does that by looking for the text inside a window that opens here - not at the
+    /// minute the user scheduled, because a run takes time and a message a few minutes late is still
+    /// delivered.
+    /// </para>
+    /// </summary>
+    public DateTime? SentAt { get; set; }
+
+    /// <summary>
+    /// The exact text that was sent to this chat.
+    /// <para>
+    /// Stored because the delivery rescan runs later and has to search the thread for the message that
+    /// actually went out. Re-deriving it then would be wrong whenever the run picked a randomised variant,
+    /// or the template changed in between: the rescan would look for text that was never sent and report
+    /// every chat as missing.
+    /// </para>
+    /// </summary>
+    public string? MessageText { get; set; }
 
     /// <summary>
     /// True when this entry comes from a dry run, which walks the automation without sending anything.
